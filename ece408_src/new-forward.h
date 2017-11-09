@@ -22,22 +22,27 @@ void forward(mshadow::Tensor<cpu, 4, DType> &y, const mshadow::Tensor<cpu, 4, DT
     */
 
     
-    const int B = x.shape_[0];
+    //const int B = x.shape_[0];
     // const int M = y.shape_[1];
     // const int C = x.shape_[1];
     // const int H = x.shape_[2];
     // const int W = x.shape_[3];
     // const int K = w.shape_[3];
 
-    for (int b = 0; b < B; ++b) {
-        CHECK_EQ(0, 1) << "Missing an ECE408 CPU implementation!";
+   // for (int b = 0; b < B; ++b) {
+     //   CHECK_EQ(0, 1) << "Missing an ECE408 CPU implementation!";
 
         /* ... a bunch of nested loops later...
             y[b][m][h][w] += x[b][c][h + p][w + q] * k[m][c][p][q];
         */
-    }
+    //}
+    const int batch_size = x.shape_[0];
+    const int input_channels = x.shape_[1];
+    const int input_y = x.shape_[2];
+    const int input_x = x.shape_[3];
+    const int output_channles = k.shape_[0];
 
-
+    
 }
 }
 }
