@@ -24,7 +24,7 @@ void forward(mshadow::Tensor<cpu, 4, DType> &y,
 
     // k : [output feature map][input feature map][y][x]
     const int batch_size = x.shape_[0];
-    const int input_channels = x.shape_[1]; //C
+    const int input_channels = x.shape_[1]; // c
     const int input_y_size = x.shape_[2]; // h
     const int input_x_size = x.shape_[3]; // w
     const int output_channels = k.shape_[0];
