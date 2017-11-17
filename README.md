@@ -14,6 +14,8 @@ You will demonstrate command of CUDA and optimization approaches by
 
 The project will be broken up into 3 milestones and a final submission. Read the description of the final report before starting, so you can collect the necessary info along the way.
 
+You will be working in teams of 3.
+
 You are expected to adhere to University of Illinois Academic integrity standards.
 Do not attempt to subvert and of the performance-measurement aspects of the final project.
 If you are unsure about whether something does not meet those guidelines, ask a member of the teaching staff.
@@ -49,7 +51,7 @@ Nothing must be turned in for this milestone, but this contributes to the final 
 
 Clone this repository to get the project directory.
 
-    git clone https://cwpearson@bitbucket.org/hwuligans/2017fa_ece408_project.git
+    git clone https://github.com/webgpu/2017fa_ece408_project.git
 
 We suggest using rai to develop your project. **You will use rai to submit your project**.
 
@@ -64,6 +66,8 @@ Download the rai binary for your platform
 
 You should have received a `.rai_profile` file by email.
 Put that file in `~/.rai_profile` (Linux/macOS) or `%HOME%/.rai_profile` (Windows).
+As soon as you and your two teammates agree on a team name, fill in the corresponding entry in your `.rai_profile`.
+**Be sure you all use the same team name**.
 
 Some more info is available on the [Client Documentation Page](https://github.com/rai-project/rai).
 
@@ -165,6 +169,10 @@ You should see something that looks like the following:
 
 
 You can see how much time MXNet is spending on a variety of the operators.
+Each line correspnds to a CUDA kernel or an API call.
+There are columns corresponding to percentage of time consumed, total time, number of calls, and average/min/max time of those calls.
+
+You can find more information about nvprof in the [CUDA Toolkit Documentation](http://docs.nvidia.com/cuda/profiler-users-guide/index.html#nvprof-overview)
 
 ## Milestone 2
 **A New CPU Convolution Layer in MxNet: Due Friday November 17th, 2017**
@@ -197,6 +205,14 @@ When your implementation is correct, you should see output like this:
 `m2.1.py` takes two position arguments. The first is the model name, the second is the dataset size. 
 If the correctness for each possible model is as below, you can be reasonably confident your implementation is right. 
 The correctness does depend on the data size. Check your correctness on the full data size of 10000.
+
+For example, you could modify `rai_build.yml` to run
+
+    - nvprof -o timeline.nvprof python m2.1.py ece408-low 100
+    - nvprof --analysis-metrics -o analysis.nvprof ece408-low  100
+
+to generate two complementary profile files, running on smaller datasets.
+You could then download the resulting folder and open it with `nvvp`.
 
 | Correctness | Size | Model  |
 |-------------| -----| -----  |
@@ -269,8 +285,8 @@ you can collect the generated files by following the download link reported by r
 You should provide a brief PDF final report `report.pdf`, with the following content.
 
 1. **Baseline Results**
-    1. M1.1: mxnet CPU layer performance results (time)
-    2. M1.2: mxnet GPU layer performance results (time, `nvprof` profile)
+    1. M1.1: mxnet CPU layer correctness
+    2. M1.2/M1.3: mxnet GPU layer performance results (`nvprof` profile). Include your profile, and describe in a few words how the GPU is spending its time.
     3. M2.1: your baseline cpu implementation performance results (time)
     4. M3.1: your baseline gpu implementation performance results (time, `nvprof` profile)
 2. **Optimization Approach and Results**
@@ -360,6 +376,33 @@ There is also one model used in milestone 1.
 
 Within MXNet, you can use `MSHADOW_CUDA_CALL(...);` as is done in `new-forward.cuh`.
 Or, you can define a macro/function similar to `wbCheck` used in WebGPU.
+
+### Profiling
+
+You can gather detailed profile information with `nvprof`.
+You can gather a timeline like the following:
+
+    nvprof -o timeline.nvprof <your command here>
+
+This will generate timeline.nvprof.
+
+You can additionally gather some detailed performance metrics.
+
+    nvprof -o timeline.nvprof <your command here>
+    nvprof --analysis-metrics -o analysis.nvprof <the same command>
+
+This will generate `timeline.nvprof` and `analysis.nvprof`.
+
+You will need to follow the link rai prints after the execution to retrieve these files.
+
+You can use the NVIDIA Visual Profiler (nvvp) to import those files.
+You will need to install nvvp on your own machine. It can be downloaded as part of the CUDA SDK.
+
+To import the files:
+* File > import > select nvprof > next > single process > next
+* timeline data file should be your timeline.nvprof
+* event/metrics data file should be your analysis.nvprof.
+* finish
 
 ### Comparing GPU implementation to CPU implementation
 
