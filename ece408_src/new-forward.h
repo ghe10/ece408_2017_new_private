@@ -45,7 +45,6 @@ void forward(mshadow::Tensor<cpu, 4, DType> &y,
                 for (int dx = 0; dx < kernel_x; dx++) {
                   int yy = out_y + dy;
                   int xx = out_x + dx;
-                  //if (yy < input_y_size && xx < input_x_size) {
                   y[batch_index][output_channel][out_y][out_x] =
                     y[batch_index][output_channel][out_y][out_x] +
                     x[batch_index][input_channel][yy][xx] *
