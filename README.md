@@ -1,5 +1,5 @@
 # README
-test zyy
+@zyy reaches 0.2s in our first implementation!
 ## Introduction
 
 This is the skeleton code for the 2017 Fall ECE408 / CS483 course project.
