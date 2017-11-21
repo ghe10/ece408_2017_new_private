@@ -30,7 +30,10 @@ __global__ void forward_kernel(DType *y, const DType *x, const DType *k, const i
     #define k4d(i3,i2,i1,i0) k[(i3) * (C * K * K) + (i2)*(K * K) + (i1)*(K) + i0]
     int X_tile_width = TILE_WIDTH + K - 1;
     int b, m, local_h, local_w, h_base, w_base, global_h, global_w;
-    extern __shared__ double shmem[];
+    //__shared__ DType shmem[sizeof(DType)*((TILE_WIDTH + K - 1)*(TILE_WIDTH + K - 1) + K * K)];
+    extern __shared__ __align__(sizeof(DType)) unsigned char my_smem[];
+    DType *shmem = reinterpret_cast<DType *>(my_smem);
+
     int W_numOfTiles = (W_out - 1) / TILE_WIDTH + 1;
     //int H_numOfTiles = (H_out - 1) / TILE_WIDTH + 1;
     DType* X_shared = &shmem[0];
@@ -84,7 +87,7 @@ void forward(mshadow::Tensor<gpu, 4, DType> &y, const mshadow::Tensor<gpu, 4, DT
     
 
     // Use mxnet's CHECK_EQ to do assertions.
-    CHECK_EQ(0, 1) << "Starting a GPU implementation based on share memory!";
+    // CHECK_EQ(0, 1) << "Starting a GPU implementation based on share memory!";
 
     // You'll probably need to launch kernels against the right stream to keep MXNet happy
     cudaStream_t s = y.stream_->stream_;
@@ -98,7 +101,7 @@ void forward(mshadow::Tensor<gpu, 4, DType> &y, const mshadow::Tensor<gpu, 4, DT
     const int K = w.shape_[2];
 
     // Set the kernel dimensions
-    size_t shmem_size = sizeof(DType)*((TILE_WIDTH + K - 1)*(TILE_WIDTH + K - 1) + K * K);
+    // shmem_size = sizeof(DType)*((TILE_WIDTH + K - 1)*(TILE_WIDTH + K - 1) + K * K);
     int Hout = H - K + 1;
     int Wout = W - K + 1;
     int W_numOfTiles = (Wout - 1) / TILE_WIDTH + 1;
@@ -107,7 +110,7 @@ void forward(mshadow::Tensor<gpu, 4, DType> &y, const mshadow::Tensor<gpu, 4, DT
     dim3 gridDim(B, M, W_numOfTiles * H_numOfTiles);
 
     // Call the kernel                                0 is sharemem s is stream
-    forward_kernel<gpu, DType><<<gridDim, blockDim, shmem_size, s>>>(y.dptr_,x.dptr_,w.dptr_, B,M,C,H,W,K);
+    forward_kernel<gpu, DType><<<gridDim, blockDim, sizeof(DType)*((TILE_WIDTH + K - 1)*(TILE_WIDTH + K - 1) + K * K), s>>>(y.dptr_,x.dptr_,w.dptr_, B,M,C,H,W,K);
 
     // Use MSHADOW_CUDA_CALL to check for CUDA runtime errors.
     MSHADOW_CUDA_CALL(cudaDeviceSynchronize());
