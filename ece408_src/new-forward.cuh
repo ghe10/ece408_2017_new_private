@@ -30,9 +30,9 @@ __global__ void forward_kernel(DType *y, const DType *x, const DType *k, const i
     #define k4d(i3,i2,i1,i0) k[(i3) * (C * K * K) + (i2)*(K * K) + (i1)*(K) + i0]
     int X_tile_width = TILE_WIDTH + K - 1;
     int b, m, local_h, local_w, h_base, w_base, global_h, global_w;
-    extern __shared__ DType shmem[];
+    extern __shared__ double shmem[];
     int W_numOfTiles = (W_out - 1) / TILE_WIDTH + 1;
-    int H_numOfTiles = (H_out - 1) / TILE_WIDTH + 1;
+    //int H_numOfTiles = (H_out - 1) / TILE_WIDTH + 1;
     DType* X_shared = &shmem[0];
     DType* W_shared = &shmem[X_tile_width * X_tile_width];
     b = blockIdx.x; // batch index 
@@ -53,10 +53,10 @@ __global__ void forward_kernel(DType *y, const DType *x, const DType *k, const i
         }
         __syncthreads();
         
-        for(int i = h; i < h_base + X_tile_width; i += TILE_WIDTH){
-            for(int j = w; j < w_base + X_tile_width; j += TILE_WIDTH){
+        for(int i = global_h; i < h_base + X_tile_width; i += TILE_WIDTH){
+            for(int j = global_w; j < w_base + X_tile_width; j += TILE_WIDTH){
                 if(i <  H && j < W){
-                    x_shared2d(i - h_base, j - w_base) = x4d[b, c, i, j];
+                    x_shared2d(i - h_base, j - w_base) = x4d(b, c, i, j);
                 }
             }
         }
