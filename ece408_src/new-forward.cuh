@@ -4,7 +4,7 @@
 
 #include <mxnet/base.h>
 
-#define TILE_WIDTH 16
+#define TILE_WIDTH 8
 namespace mxnet
 {
 namespace op
@@ -23,14 +23,11 @@ __global__ void forward_kernel(DType *y, const DType *x, const DType *k, const i
 
     const int H_out = H - K + 1;
     const int W_out = W - K + 1;
-    //(void)H_out; // silence declared but never referenced warning. remove this line when you start working
-    //(void)W_out; // silence declared but never referenced warning. remove this line when you start working
     #define y4d(i3,i2,i1,i0) y[(i3) * (M * H_out * W_out) + (i2)*(H_out * W_out) + (i1)*(W_out) + i0]
     #define x4d(i3,i2,i1,i0) x[(i3) * (C * H * W) + (i2)*(H * W) + (i1)*(W) + i0]
     #define k4d(i3,i2,i1,i0) k[(i3) * (C * K * K) + (i2)*(K * K) + (i1)*(K) + i0]
     int X_tile_width = TILE_WIDTH + K - 1;
     int b, m, local_h, local_w, h_base, w_base, global_h, global_w;
-    //__shared__ DType shmem[sizeof(DType)*((TILE_WIDTH + K - 1)*(TILE_WIDTH + K - 1) + K * K)];
     extern __shared__ __align__(sizeof(DType)) unsigned char my_smem[];
     DType *shmem = reinterpret_cast<DType *>(my_smem);
 
@@ -64,10 +61,12 @@ __global__ void forward_kernel(DType *y, const DType *x, const DType *k, const i
             }
         }
         __syncthreads();
+        if(global_h < H && global_w < W){
         for(int p = 0; p < K; ++p){
             for(int q = 0; q < K; ++q){
                 sum += x_shared2d(local_h + p, local_w + q) * w2d(p, q);
             }
+        }
         }
         __syncthreads();
     }
