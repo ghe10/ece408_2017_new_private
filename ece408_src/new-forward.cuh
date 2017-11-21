@@ -4,7 +4,7 @@
 
 #include <mxnet/base.h>
 
-#define TILE_WIDTH 8
+#define TILE_WIDTH 12
 namespace mxnet
 {
 namespace op
