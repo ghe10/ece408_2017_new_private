@@ -3,7 +3,7 @@
 #define MXNET_OPERATOR_NEW_FORWARD_CUH_
 
 #include <mxnet/base.h>
-
+#include "mshadow/tensor.h"
 #define TILE_WIDTH 25
 #define TILE_HEIGHT 25
 namespace mxnet
@@ -86,7 +86,7 @@ __global__ void unroll_kernel(DType *X_unrolled, DType *W_unrolled, const DType 
     int bid = blockIdx.y;  // id of block
     int local_h = threadIdx.y;
     int local_w = threadIdx.x;
-    DType val;
+    DType val = 1;
     #define x4d(i3,i2,i1,i0) x[(i3) * (H * W) + (i2)*(H * W) + (i1)*(W) + i0]
     #define k4d(i3,i2,i1,i0) k[(i3) * (K * K) + (i2)*(K * K) + (i1)*(K) + i0]
     #define uw2d(i1, i0) W_unrolled[i1 * 25 + i0]
@@ -94,7 +94,7 @@ __global__ void unroll_kernel(DType *X_unrolled, DType *W_unrolled, const DType 
     if(bid < 2){  // load kernel
         if(local_h < 25 && local_w < 25){
             int m = bid * 25 + local_h;
-            uw2d(m, local_w) = 1; //k4d(m, 0, local_w / 5, local_w % 5);
+            uw2d(m, local_w) = k4d(m, 0, local_w / 5, local_w % 5);
         }
     }else{ // load input
         val = x4d(b, 0, local_h, local_w);
@@ -102,11 +102,14 @@ __global__ void unroll_kernel(DType *X_unrolled, DType *W_unrolled, const DType 
         for(int i = 0; i < K; ++i){
             for(int j = 0; j < K; ++j){
                 if(local_w - j >= 0 && local_w + K - 1 - j < W && local_h - i >= 0 && local_h + K - 1 - i < H){
-                   ux2d(i * K + j, (local_h - i) * Wout + local_w - j) = 1; //val;
+                   ux2d(i * K + j, (local_h - i) * Wout + local_w - j) = val;
                 }
             }
-        } 
+        }
     }
+   //if(local_h < Hout && local_w < Wout)
+    //        X_unrolled[local_h * Wout + local_w] = val;
+
     #undef x4d
     #undef k4d
     #undef uw2d
@@ -132,28 +135,32 @@ void forward(mshadow::Tensor<gpu, 4, DType> &y, const mshadow::Tensor<gpu, 4, DT
     printf("B = %d, M = %d, C = %d, H = %d, W = %d \n", B, M, C, H, W);
     int Hout = H - K + 1;
     int Wout = W - K + 1;     
-    DType* X_unrolled;
-    cudaMalloc(&X_unrolled, sizeof(DType) * K * K * Hout * Wout);
-    DType* W_unrolled; 
-    cudaMalloc(&W_unrolled, sizeof(DType) * M * K * K);
+    mshadow::Tensor<gpu, 2, DType> X_unrolled(mshadow::Shape2(K * K, Hout * Wout));
+    mshadow::AllocSpace(&X_unrolled);
+    mshadow::Tensor<gpu, 2, DType> W_unrolled(mshadow::Shape2(M, K * K));
+    mshadow::AllocSpace(&W_unrolled);
+    //cudaMalloc(&X_unrolled, sizeof(DType) * K * K * Hout * Wout);
+    //DType* W_unrolled; 
+    //cudaMalloc(&W_unrolled, sizeof(DType) * M * K * K);
     // 
     // Set the kernel dimensions,    
     dim3 blockDim1(28, 28, 1); // 
     dim3 gridDim1(B, 3, 1); // 
-    unroll_kernel<gpu, DType><<<gridDim1, blockDim1, 0, s>>>(X_unrolled, W_unrolled, x.dptr_, w.dptr_, H,W,K);
-    //cudaDeviceSynchronize();
+    unroll_kernel<gpu, DType><<<gridDim1, blockDim1, 0, s>>>(X_unrolled.dptr_, W_unrolled.dptr_, x.dptr_, w.dptr_, H,W,K);
+    cudaDeviceSynchronize();
     //for(int i = 0; i < 25; ++i){
-        printf("test info \n");
+        //printf("test info %f \n", X_unrolled[0][0]);
     //}
     dim3 blockDim(TILE_WIDTH, TILE_HEIGHT, 1);
     dim3 gridDim(B, (Hout * Wout - 1) / TILE_WIDTH + 1, (M - 1) / TILE_HEIGHT + 1);
     // Call the kernel                                0 is sharemem s is stream
-    //matrix_kernel<gpu,DType><<<gridDim, blockDim, 0, s>>>(y.dptr_, X_unrolled, W_unrolled);
-    //forward_kernel<gpu, DType><<<gridDim, blockDim, 0, s>>>(y.dptr_,X_unrolled, W_unrolled, C,H,W,K);
+    //matrix_kernel<gpu,DType><<<gridDim, blockDim, 0, s>>>(y.dptr_, X_unrolled.dptr_, W_unrolled.dptr_);
+    forward_kernel<gpu, DType><<<gridDim, blockDim, 0, s>>>(y.dptr_,X_unrolled.dptr_, W_unrolled.dptr_, C,H,W,K);
 
     // Use MSHADOW_CUDA_CALL to check for CUDA runtime errors.
     MSHADOW_CUDA_CALL(cudaDeviceSynchronize());
-
+    mshadow::FreeSpace(&X_unrolled);
+    mshadow::FreeSpace(&W_unrolled);
 }
 
 
