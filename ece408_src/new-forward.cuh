@@ -10,6 +10,7 @@ namespace mxnet
 namespace op
 {
 
+__constant__ float constant_kernel[1250];
 
 template<typename gpu, typename DType>
 __global__ void forward_kernel(DType *y, const DType *x, const DType *k, const int B, const int M, const int C, const int H, const int W, const int K) {
@@ -35,7 +36,7 @@ __global__ void forward_kernel(DType *y, const DType *x, const DType *k, const i
     //int H_numOfTiles = (H_out - 1) / TILE_WIDTH + 1;
     DType* X_shared = &shmem[0];
     DType* W_shared = &shmem[X_tile_width * X_tile_width];
-    b = blockIdx.x; // batch index 
+    b = blockIdx.x; // batch index
     m = blockIdx.y; // output feature map index
     local_w = threadIdx.x;
     local_h = threadIdx.y;
@@ -43,16 +44,11 @@ __global__ void forward_kernel(DType *y, const DType *x, const DType *k, const i
     w_base = (blockIdx.z % W_numOfTiles) * TILE_WIDTH;
     global_h = h_base + local_h;
     global_w = w_base + local_w;
-    
+
     #define w2d(i1, i0) W_shared[(i1) * K + i0]
     #define x_shared2d(i1, i0)  X_shared[(i1) * X_tile_width + i0]
     DType sum = 0;
     for(int c = 0; c < C; ++c){         // sum over all input channels
-        if(local_h < K && local_w < K){
-            w2d(local_h, local_w) = k4d(m, c, local_h, local_w);
-        }
-        __syncthreads();
-        
         for(int i = global_h; i < h_base + X_tile_width; i += TILE_WIDTH){
             for(int j = global_w; j < w_base + X_tile_width; j += TILE_WIDTH){
                 if(i <  H && j < W){
@@ -64,7 +60,9 @@ __global__ void forward_kernel(DType *y, const DType *x, const DType *k, const i
         if(global_h < H && global_w < W){
         for(int p = 0; p < K; ++p){
             for(int q = 0; q < K; ++q){
-                sum += x_shared2d(local_h + p, local_w + q) * w2d(p, q);
+                //sum += x_shared2d(local_h + p, local_w + q) * w2d(p, q);
+                sum += x_shared2d(local_h + p, local_w + q) *
+                  constant_kernel[m * (C * K * K) + c * (K * K) +  p * (K) + q];
             }
         }
         }
@@ -83,7 +81,7 @@ __global__ void forward_kernel(DType *y, const DType *x, const DType *k, const i
 // Any code you write should be executed by this function
 template<typename gpu, typename DType>
 void forward(mshadow::Tensor<gpu, 4, DType> &y, const mshadow::Tensor<gpu, 4, DType> &x, const mshadow::Tensor<gpu, 4, DType> &w) {
-    
+
 
     // Use mxnet's CHECK_EQ to do assertions.
     // CHECK_EQ(0, 1) << "Starting a GPU implementation based on share memory!";
@@ -108,6 +106,8 @@ void forward(mshadow::Tensor<gpu, 4, DType> &y, const mshadow::Tensor<gpu, 4, DT
     dim3 blockDim(TILE_WIDTH, TILE_WIDTH, 1);
     dim3 gridDim(B, M, W_numOfTiles * H_numOfTiles);
 
+    // allocate constant_kernel
+    cudaMemcpyToSymbol(constant_kernel, w.dptr_, sizeof(float) * 50 * 25, 0, cudaMemcpyDeviceToDevice);
     // Call the kernel                                0 is sharemem s is stream
     forward_kernel<gpu, DType><<<gridDim, blockDim, sizeof(DType)*((TILE_WIDTH + K - 1)*(TILE_WIDTH + K - 1) + K * K), s>>>(y.dptr_,x.dptr_,w.dptr_, B,M,C,H,W,K);
 
