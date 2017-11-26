@@ -4,6 +4,8 @@ still have bugs in latest version. by zyy
 
 speed test for 75ms version: 109ms .... same for mutltiple times
 
+test 8 streams and constant memory for kernels @hgc
+
 ## Introduction
 
 This is the skeleton code for the 2017 Fall ECE408 / CS483 course project.
