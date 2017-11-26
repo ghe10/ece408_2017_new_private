@@ -11,16 +11,16 @@ namespace op
 {
 
 template<typename gpu, typename DType>
-__global__ void forward_mul_kernel(DType *y, DType *B, DType *A, const int C, const int H, const int W, const int K) {
+__global__ void forward_mul_kernel(DType *y, DType *B, DType *A, const int C, const int H, const int W, const int K, int offset) {
 
     //const int H_out = H - K + 1;
     //const int W_out = W - K + 1;
     //const int MHW = 50 * H_out * W_out;
     //const int HoutWout = 576; //H_out * W_out;
     #define y4d(i3,i2,i1,i0) y[(i3) * 28800 + (i2)*576 + (i1)*(24) + i0]
-    __shared__ DType tileA[TILE_WIDTH * TILE_HEIGHT];
-    __shared__ DType tileB[TILE_WIDTH * TILE_HEIGHT];
-    #define tA2d(i1, i0) tileA[i1 * TILE_WIDTH + i0]
+    __shared__ DType tileA[1250];  //[2 * TILE_WIDTH * TILE_HEIGHT];
+    __shared__ DType tileB[625];   //[TILE_WIDTH * TILE_HEIGHT];
+    #define tA2d(i1, i0) tileA[i1 * 50 + i0]
     #define tB2d(i1, i0) tileB[i1 * TILE_WIDTH + i0]
     int b = blockIdx.x;  // batch index 
     int bx = blockIdx.y; // 
@@ -29,31 +29,35 @@ __global__ void forward_mul_kernel(DType *y, DType *B, DType *A, const int C, co
     int ty = threadIdx.y;
     int Row = by * TILE_HEIGHT + ty;
     int Col = bx * TILE_WIDTH + tx;
-    int numARows = 50, numBRows = 25, numAColumns = 25, numBColumns = 576;
-    DType sum = 0;
-    int aBound = (numAColumns - 1) / TILE_WIDTH + 1; // num of tiles in A columns
-    int Aindex, Bindex;
+    int numAColumns = 25, numBColumns = 576;
+    DType sum = 0, sum1 = 0;
+    int aBound = 1; //(numAColumns - 1) / TILE_WIDTH + 1; // num of tiles in A columns
+    int Aindex, Bindex, tmp;
     for(int m = 0; m < aBound; ++m){
        Aindex = Row * numAColumns + m * TILE_WIDTH + tx;//(tx  + m * TILE_WIDTH) * numAColumns + Row;
        Bindex = b * 14400 + (m * TILE_WIDTH + ty) * numBColumns + Col;
-       if(m * TILE_WIDTH + tx < numAColumns && Row < numARows){
+       //if(m * TILE_WIDTH + tx < numAColumns && Row < numARows){
             tA2d(tx, ty) = A[Aindex];
-       }else{
-            tA2d(tx, ty) = 0;
-       }
-       if(m * TILE_WIDTH + ty < numBRows && Col < numBColumns){
+            tA2d(tx, ty + TILE_WIDTH) = A[Aindex + 625];
+       //}
+       if(Col < numBColumns){
             tB2d(ty, tx) = B[Bindex];
        }else{
             tB2d(ty, tx) = 0;
        }
        __syncthreads();
        for (int k = 0; k < TILE_WIDTH; ++k){
-            sum += tA2d(k, ty) * tB2d(k, tx);
+            tmp = tB2d(k, tx);
+            sum += tA2d(k, ty) * tmp; //tB2d(k, tx);
+            sum1 += tA2d(k, ty + 25) * tmp; //tB2d(k, tx);
        }
-       //__syncthreads();
     }
-    if(Row < 50 && Col < 576){
-        y4d(b, Row, Col / 24, Col % 24) = sum;
+    if(Col < 576){
+        tmp = (b + offset) * 28800 + Row *576 + Col;
+        y[tmp] = sum;
+        y[tmp + 14400] = sum1;
+        //y[b * 28800 + Row *576 + Col] = sum;
+        //y[b * 28800 + (Row +25)*576 + Col] = sum1;
     }
     #undef y4d
     #undef tA2d
@@ -77,14 +81,14 @@ __global__ void matrix_kernel(DType *y, DType *B, DType *A){
 }
 
 template<typename gpu, typename DType>
-__global__ void unroll_kernel(DType *X_unrolled, DType *W_unrolled, const DType *x, const DType *k, const int H, const int W, const int K){
+__global__ void unroll_kernel(DType *X_unrolled, DType *W_unrolled, const DType *x, const DType *k, const int H, const int W, const int K, int offset){
     const int Wout = W - K + 1;
     const int Hout = H - K + 1;
     int b = blockIdx.x;
     int bid = blockIdx.y;  // id of block
     int local_h = threadIdx.y;
     int local_w = threadIdx.x;
-    DType val = 1;
+    DType val = 0;
     #define x4d(i3,i2,i1,i0) x[(i3) * (H * W) + (i2)*(H * W) + (i1)*(W) + i0]
     #define k4d(i3,i2,i1,i0) k[(i3) * (K * K) + (i2)*(K * K) + (i1)*(K) + i0]
     #define uw2d(i1, i0) W_unrolled[i1 * 25 + i0]
@@ -95,7 +99,7 @@ __global__ void unroll_kernel(DType *X_unrolled, DType *W_unrolled, const DType 
             uw2d(m, local_w) = k4d(m, 0, r, c);
         }
     }else{ // load input
-        val = x4d(b, 0, local_h, local_w);
+        val = x4d(b + offset, 0, local_h, local_w);
         for(int i = 0; i < K; ++i){
             for(int j = 0; j < K; ++j){
                 if(local_w - j >= 0 && local_w + K - 1 - j < W && local_h - i >= 0 && local_h + K - 1 - i < H){
@@ -116,7 +120,11 @@ __global__ void unroll_kernel(DType *X_unrolled, DType *W_unrolled, const DType 
 template<typename gpu, typename DType>
 void forward(mshadow::Tensor<gpu, 4, DType> &y, const mshadow::Tensor<gpu, 4, DType> &x, const mshadow::Tensor<gpu, 4, DType> &w) {
     // You'll probably need to launch kernels against the right stream to keep MXNet happy
-    cudaStream_t s = y.stream_->stream_;
+    cudaStream_t s1; //= y.stream_->stream_;
+    cudaStream_t s2; //
+    cudaStreamCreate(&s1);
+    cudaStreamCreate(&s2);
+    
     // Extract the tensor dimensions into B,M,C,H,W,K
     const int B = x.shape_[0];
     const int M = w.shape_[0];
@@ -128,29 +136,46 @@ void forward(mshadow::Tensor<gpu, 4, DType> &y, const mshadow::Tensor<gpu, 4, DT
     printf("B = %d, M = %d, C = %d, H = %d, W = %d \n", B, M, C, H, W);
     int Hout = H - K + 1;
     int Wout = W - K + 1;     
-    DType *X_unrolled;
-    DType *W_unrolled;
-    cudaMalloc(&X_unrolled, B * K * K * Hout * Wout * sizeof(DType));
-    cudaMalloc(&W_unrolled, M * K * K * sizeof(DType));
-    //
+    DType *X_unrolled1;
+    DType *X_unrolled2;
+    DType *W_unrolled1;
+    DType *W_unrolled2;
+    cudaMalloc(&X_unrolled1, B/2 * K * K * Hout * Wout * sizeof(DType));
+    cudaMalloc(&X_unrolled2, B/2 * K * K * Hout * Wout * sizeof(DType));
+    cudaMalloc(&W_unrolled1, M * K * K * sizeof(DType));
+    cudaMalloc(&W_unrolled2, M * K * K * sizeof(DType));
+    
     // Set the kernel dimensions,    
-    dim3 blockDim1(28, 28, 1); // 
-    dim3 gridDim1(B, 3, 1);    // 
-    unroll_kernel<gpu, DType><<<gridDim1, blockDim1>>>(X_unrolled, W_unrolled, x.dptr_, w.dptr_, H,W,K);
+    dim3 blockDimUnroll(28, 28, 1); // 
+    dim3 gridDimUnroll(B/2, 3, 1);    // 
+    dim3 blockDimUnroll2(28, 28, 1);
+    dim3 gridDimUnroll2(B/2, 3, 1);
 
-    cudaDeviceSynchronize();
+    //cudaDeviceSynchronize();
 
     dim3 blockDim(TILE_WIDTH, TILE_WIDTH, 1);  // 25, 25
-    dim3 gridDim(B, (Hout * Wout - 1) / TILE_WIDTH + 1, (M - 1) / TILE_WIDTH + 1);
-    //dim3 gridDim(B, 24, 2);
+    //dim3 gridDim(B, (Hout * Wout - 1) / TILE_WIDTH + 1, (M - 1) / TILE_WIDTH + 1);
+    dim3 gridDim(B/2, 24, 1);
+    dim3 blockDim2(TILE_WIDTH, TILE_WIDTH, 1);
+    dim3 gridDim2(B/2, 24, 1);
     // Call the kernel                                0 is sharemem s is stream
-    //matrix_kernel<gpu,DType><<<gridDim, blockDim, 0, s>>>(y.dptr_, X_unrolled, W_unrolled);
-    forward_mul_kernel<gpu, DType><<<gridDim, blockDim, 0, s>>>(y.dptr_,X_unrolled, W_unrolled, C,H,W,K);
-
+    //for(int i = 0; i < 1; ++i){
+    unroll_kernel<gpu, DType><<<gridDimUnroll, blockDimUnroll, 0, s1>>>(X_unrolled1, W_unrolled1, x.dptr_, w.dptr_, H,W,K, 0);
+   // forward_mul_kernel<gpu, DType><<<gridDim, blockDim, 0, s1>>>(y.dptr_, X_unrolled1, W_unrolled1, C,H,W,K,0);
+    unroll_kernel<gpu, DType><<<gridDimUnroll2, blockDimUnroll2, 0, s2>>>(X_unrolled2, W_unrolled2, x.dptr_, w.dptr_, H,W,K, 5000);
+    forward_mul_kernel<gpu, DType><<<gridDim, blockDim, 0, s1>>>(y.dptr_, X_unrolled1, W_unrolled1, C,H,W,K,0);
+    forward_mul_kernel<gpu, DType><<<gridDim2, blockDim2, 0, s2>>>(y.dptr_, X_unrolled2, W_unrolled2, C,H,W,K,5000);
+    //}
+    cudaStreamSynchronize(s1);
+    cudaStreamSynchronize(s2);
+    //forward_mul_kernel<gpu, DType><<<gridDim, blockDim, 0, s>>>(y.dptr_, X_unrolled, W_unrolled, C,H,W,K,12);
+    
     // Use MSHADOW_CUDA_CALL to check for CUDA runtime errors.
     MSHADOW_CUDA_CALL(cudaDeviceSynchronize());
-    cudaFree(X_unrolled);
-    cudaFree(W_unrolled);
+    cudaFree(X_unrolled1);
+    cudaFree(X_unrolled2);
+    cudaFree(W_unrolled1);
+    cudaFree(W_unrolled2);
 }
 
 
