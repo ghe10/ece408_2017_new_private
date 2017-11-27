@@ -17,13 +17,19 @@ __global__ void forward_mul_kernel(DType *y, DType *B, DType *A, const int H, co
     //const int W_out = W - K + 1;
     //const int MHW = 50 * H_out * W_out;
     //const int HoutWout = 576; //H_out * W_out;
+
     #define y4d(i3,i2,i1,i0) y[(i3) * 28800 + (i2)*576 + (i1)*(24) + i0]
     __shared__ DType tileA[1250];  //[2 * TILE_WIDTH * TILE_HEIGHT];
-    __shared__ DType tileB[25 * 32];   //[TILE_WIDTH * TILE_HEIGHT];
+    __shared__ DType tileB1[25 * 32];   //[TILE_WIDTH * TILE_HEIGHT];
     __shared__ DType tileB2[25 * 32];
+    __shared__ DType tileB3[25 * 32];
+    //__shared__ DType tileB4[25 * 16];
     #define tA2d(i1, i0) tileA[i1 * 50 + i0]
-    #define tB2d(i1, i0) tileB[i1 * 32 + i0]
+    #define tB2d1(i1, i0) tileB1[i1 * 32 + i0]
     #define tB2d2(i1, i0) tileB2[i1 * 32 + i0]
+    #define tB2d3(i1, i0) tileB3[i1 * 32 + i0]
+    //#define tB2d4(i1, i0) tileB4[i1 * 16 + i0]
+
     int b = blockIdx.x;  // batch index 
     int bx = blockIdx.y; // 
     int by = blockIdx.z;
@@ -32,13 +38,9 @@ __global__ void forward_mul_kernel(DType *y, DType *B, DType *A, const int H, co
     int Row = ty; //by * TILE_HEIGHT + ty;
     int Col = bx * 32 + tx;// Col2 = Col + 9 * 32;
     int numAColumns = 25, numBColumns = 576;
-    DType sum = 0, sum1 = 0, sum2 = 0, sum3 = 0;
-    //int aBound = 1; //(numAColumns - 1) / TILE_WIDTH + 1; // num of tiles in A columns
-    int Aindex, Bindex, tmpB, tmpA;
-    //for(int m = 0; m < aBound; ++m){
-       //Aindex = Row * numAColumns + m * TILE_WIDTH + tx;//(tx  + m * TILE_WIDTH) * numAColumns + Row;
-       //Bindex = b * 14400 + (m * TILE_WIDTH + ty) * numBColumns + Col;
-       //if(m * TILE_WIDTH + tx < numAColumns && Row < numARows){
+    DType sum[6] = {0, 0, 0, 0, 0, 0};
+    int Aindex, Bindex;
+    DType tmpB, tmpA1, tmpA2;
        if(tx < 25){
             Aindex = Row * numAColumns + tx; //m * TILE_WIDTH + tx;
             tA2d(tx, ty) = A[Aindex];
@@ -46,34 +48,41 @@ __global__ void forward_mul_kernel(DType *y, DType *B, DType *A, const int H, co
        }
        //if(Col < numBColumns){
             Bindex = b * 14400 + ty * numBColumns + Col;
-            tB2d(ty, tx) = B[Bindex];
-            tB2d2(ty, tx) = B[Bindex + 9 * 32];
-       //}else{
-       //     tB2d(ty, tx) = 0;
+            tB2d1(ty, tx) = B[Bindex];
+            tB2d2(ty, tx) = B[Bindex + 6 * 32];
+            tB2d3(ty, tx) = B[Bindex + 6 * 32 * 2];
+            //tB2d4(ty, tx) = B[Bindex + 9 * 16 * 3];
        //}
        __syncthreads();
        for (int k = 0; k < TILE_WIDTH; ++k){
-            tmpB = tB2d(k, tx);
-            sum += tA2d(k, ty) * tmpB; //tB2d(k, tx);
-            sum1 += tA2d(k, ty + 25) * tmpB; //tB2d(k, tx);
+            tmpA1 = tA2d(k, ty); tmpA2 = tA2d(k, ty + 25);
+            tmpB = tB2d1(k, tx); 
+            sum[0] += tmpA1 * tmpB; //tB2d(k, tx);
+            sum[1] += tmpA2 * tmpB; //tB2d(k, tx);
             tmpB = tB2d2(k, tx);
-            sum2 += tA2d(k, ty) * tmpB;
-            sum3 += tA2d(k, ty + 25) * tmpB;
+            sum[2] += tmpA1 * tmpB;
+            sum[3] += tmpA2 * tmpB;
+            tmpB = tB2d3(k, tx);
+            sum[4] += tmpA1 * tmpB;
+            sum[5] += tmpA2 * tmpB;
        }
        //__syncthreads();
-    //}
     //if(Col < 576){
         int tmp = (b + offset) * 28800 + Row *576 + Col;
-        y[tmp] = sum;
-        y[tmp + 14400] = sum1;
-        y[tmp + 9 * 32] = sum2;
-        y[tmp + 14400 + 9 * 32] = sum3;
+        for(int i = 0; i < 6; i += 2){
+            y[tmp + 6 * 32 * (i >> 1)] = sum[i];
+            y[tmp + 14400 + 6 * 32 * (i >> 1)] = sum[i + 1];
+        }
+        //y[tmp + 9 * 16] = sum2;
+        //y[tmp + 14400 + 9 * 32] = sum3;
         //y[b * 28800 + Row *576 + Col] = sum;
         //y[b * 28800 + (Row +25)*576 + Col] = sum1;
     //}
     #undef y4d
     #undef tA2d
-    #undef tB2d
+    #undef tB2d1
+    #undef tB2d2
+    #undef tB2d3
 }
 
 template<typename gpu, typename DType>
@@ -176,7 +185,7 @@ void forward(mshadow::Tensor<gpu, 4, DType> &y, const mshadow::Tensor<gpu, 4, DT
 
     dim3 blockDim(32, TILE_WIDTH, 1);  // 25, 25
     //dim3 gridDim(B, (Hout * Wout - 1) / TILE_WIDTH + 1, (M - 1) / TILE_WIDTH + 1);
-    dim3 gridDim(B/5, 18/2, 1);
+    dim3 gridDim(B/5, 18/3, 1);
     // Call the kernel                                0 is sharemem s is stream
     //for(int i = 0; i < 1; ++i){
     unroll_kernel<gpu,DType><<<gridDimU, blockDimU, 0, s1>>>(X_unrolled1, W_unrolled1, x.dptr_, w.dptr_,0);
