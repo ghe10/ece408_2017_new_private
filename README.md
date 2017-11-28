@@ -4,7 +4,9 @@ still have bugs in latest version. by zyy
 
 speed test for 75ms version: 109ms .... same for mutltiple times
 
-test 8 streams and constant memory for kernels @hgc
+test 8 streams and constant memory for kernels @hgc : slow
+
+test 6 computation per thread @hgc
 
 ## Introduction
 
