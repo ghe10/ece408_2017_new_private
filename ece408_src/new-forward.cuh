@@ -86,19 +86,184 @@ __global__ void forward_mul_kernel(DType *y, DType *B, DType *A, const int H, co
 }
 
 template<typename gpu, typename DType>
-__global__ void matrix_kernel(DType *y, DType *B, DType *A){
-    int row = blockIdx.z * 25 + threadIdx.y;
-    int col =  blockIdx.y * 25 + threadIdx.x;
-    int b = blockIdx.x;
-
-    if(row < 50 && col < 24 * 24){
-        DType val = 0;
-        for(int i = 0; i < 25; ++i){
-            val += A[row * 25 + i] * B[b* 25 * 24 * 24 + i * 24*24 + col];
+__global__ void matrix_kernel(DType *y, DType *x, DType *k, int offset){ //gridDim B/4, 3, 1,  blockDim 25 * 32
+    
+    __shared__ DType tileA[1250];    // 50 * 25
+    __shared__ DType tileB1[25 * 32];//
+    __shared__ DType tileB2[25 * 32];
+    __shared__ DType tileB3[25 * 32];
+    __shared__ DType tileB4[25 * 32];
+    __shared__ DType tileB5[25 * 32];
+    __shared__ DType tileB6[25 * 32];
+    
+    int b = blockIdx.x;  // batch index 
+    int bx = blockIdx.y; // 3
+    //int by = blockIdx.z; // 1
+    int tx = threadIdx.x; // 32
+    int ty = threadIdx.y; // 25
+    int index = ty * 32 + tx;
+    #define tA2d(i1, i0) tileA[i1 * 50 + i0]
+    //DType val[6] = {0};
+    //int tileTmpIndex = 0; 
+    //int local_w, local_h, tileFirstRowIndex;
+    // load filters from global to shared memory
+   if(ty >= 5){ 
+        //if(tx < 25){
+        if(index < 785){
+            int tileAIndex = (ty - 5) * 32 + tx;
+            int newTy = tileAIndex / 25;
+            int newTx = tileAIndex % 25;
+            //int kIndex = ty * 25 + tx; 
+            //tA2d(tx, ty) = k[kIndex];                               //A[Aindex];
+            //tA2d(tx, ty + TILE_WIDTH) = k[kIndex + 625];
+            tA2d(newTx, newTy) = k[tileAIndex];
+            tA2d(newTx, newTy + TILE_WIDTH) = k[tileAIndex + 625];
         }
-        int r = col / 24, c = col % 24;
-        y[b * 50 * 24 * 24 + row * 24 * 24 + r*24 + c] = val;
+    }else{
+    // load data from global to shared memory
+    DType val[6] = {0};
+    int tileTmpIndex = 0;
+    int local_w, local_h, tileFirstRowIndex;
+    /*
+    if(bx == 0 && index < 152){
+        for(int h = 0; h < 6; ++h){
+            val[h] = x[(b + offset) * 784 + 0 * 784 + index + 112 * h]; //x4d(b + offset, 0, local_h, local_w);
+        }   
+        local_w = index % 28;
+        local_h = index / 28;
+        for(int i = 0; i < 5; ++i){
+            for(int j = 0; j < 5; ++j){
+                if(local_w - j >= 0 && local_w+5-1-j < 28 && local_h - i >= 0){ //&& local_h + 5 - 1 - i < 28)
+                    tileFirstRowIndex = (local_h - i) * 24 + local_w - j;
+                    if(0 <= tileFirstRowIndex && tileFirstRowIndex < 32 ){
+                        tileTmpIndex = (i * 5 + j) * 32 + tileFirstRowIndex;
+                        tileB1[tileTmpIndex] = val[0];
+                        tileB2[tileTmpIndex] = val[1];
+                        tileB3[tileTmpIndex] = val[2];
+                        tileB4[tileTmpIndex] = val[3];
+                        tileB5[tileTmpIndex] = val[4];
+                        tileB6[tileTmpIndex] = val[5];
+                    }
+                }
+            }
+        }
     }
+
+    if(bx == 1 && index < 152){
+        for(int h = 0; h < 6; ++h){
+            val[h] = x[(b + offset) * 784 + 0 * 784 + index + 36 + 112 * h];
+        }
+            local_w = (index + 36) % 28;
+            local_h = (index + 36) / 28;
+        for(int i = 0; i < 5; ++i){
+            for(int j = 0; j < 5; ++j){
+                if(local_w - j >= 0 && local_w+5-1-j < 28 && local_h - i >= 0){// && local_h + 5 - 1 - i<28){
+                    tileFirstRowIndex = (local_h - i) * 24 + local_w - j;
+                    if(32<= tileFirstRowIndex && tileFirstRowIndex < 64 ){
+                        tileTmpIndex = (i * 5 + j) * 32 + tileFirstRowIndex - 32;
+                        tileB1[tileTmpIndex] = val[0];
+                        tileB2[tileTmpIndex] = val[1];
+                        tileB3[tileTmpIndex] = val[2];
+                        tileB4[tileTmpIndex] = val[3];
+                        tileB5[tileTmpIndex] = val[4]; 
+                        tileB6[tileTmpIndex] = val[5]; 
+                    }
+                }
+            }
+        }
+    }
+
+    if(bx == 2 && index < 152){
+        for(int h = 0; h < 6; ++h){
+            val[h] = x[(b + offset) * 784 + 0 * 784 + index + 72 + 112 * h];
+        }    
+        local_w = (index + 72) % 28;
+        local_h = (index + 72) / 28;
+        for(int i = 0; i < 5; ++i){
+            for(int j = 0; j < 5; ++j){
+                if(local_w - j >= 0 && local_w+5-1-j < 28 && local_h - i >= 0){// && local_h + 5 - 1 - i<28){
+                    tileFirstRowIndex = (local_h - i) * 24 + local_w - j;
+                    if(64 <= tileFirstRowIndex && tileFirstRowIndex < 96){
+                        tileTmpIndex = (i * 5 + j) * 32 + tileFirstRowIndex - 64;
+                            tileB1[tileTmpIndex] = val[0];
+                            tileB2[tileTmpIndex] = val[1];
+                            tileB3[tileTmpIndex] = val[2];
+                            tileB4[tileTmpIndex] = val[3];
+                            tileB5[tileTmpIndex] = val[4];
+                            tileB6[tileTmpIndex] = val[5];
+                    }
+                }
+            }
+        }
+    }
+    */
+    int local_index, xIndex, bound;
+    if(index < 152){
+        xIndex = (b + offset) * 784 + index + 36 * bx;
+        for(int h = 0; h < 6; ++h){
+            val[h] = x[xIndex + 112 * h];
+        }
+        local_index = (index + 36 * bx);
+        local_w = local_index % 28;
+        local_h = local_index / 28;
+        for(int i = 0; i < 5; ++i){
+            for(int j = 0; j < 5; ++j){
+                if(local_w - j >= 0 && local_w+5-1-j < 28 && local_h - i >= 0){
+                    tileFirstRowIndex = (local_h - i) * 24 + local_w - j;
+                    bound = 32*bx;
+                    if(bound <= tileFirstRowIndex && tileFirstRowIndex < bound+32){
+                        tileTmpIndex = (i * 5 + j) * 32 + tileFirstRowIndex - bound;
+                            tileB1[tileTmpIndex] = val[0];
+                            tileB2[tileTmpIndex] = val[1];
+                            tileB3[tileTmpIndex] = val[2];
+                            tileB4[tileTmpIndex] = val[3];
+                            tileB5[tileTmpIndex] = val[4];
+                            tileB6[tileTmpIndex] = val[5];
+                    }
+                }
+            }
+        }
+    }
+
+    }
+    __syncthreads();
+    // compute
+    DType sum[12] = {0};
+    DType tmpA1, tmpA2, tmpB;
+    int tileBIndex;
+    for(int k = 0; k < TILE_WIDTH; ++k){
+        tmpA1 = tA2d(k, ty); tmpA2 = tA2d(k, ty + 25);
+        tileBIndex = k * 32 + tx;
+        tmpB = tileB1[tileBIndex];  
+        sum[0] += tmpA1 * tmpB; 
+        sum[1] += tmpA2 * tmpB;
+        tmpB = tileB2[tileBIndex];
+        sum[2] += tmpA1 * tmpB;
+        sum[3] += tmpA2 * tmpB;
+        tmpB = tileB3[tileBIndex];
+        sum[4] += tmpA1 * tmpB;
+        sum[5] += tmpA2 * tmpB; 
+        tmpB = tileB4[tileBIndex];
+        sum[6] += tmpA1 * tmpB;
+        sum[7] += tmpA2 * tmpB; 
+        tmpB = tileB5[tileBIndex];
+        sum[8] += tmpA1 * tmpB;
+        sum[9] += tmpA2 * tmpB; 
+        tmpB = tileB6[tileBIndex];
+        sum[10] += tmpA1 * tmpB;
+        sum[11] += tmpA2 * tmpB; 
+    }
+    //__syncthreads();
+    
+    //write to global memory
+        int row = ty, col = bx * 32 + tx;
+        int tmp = (b + offset) * 28800 + row *576 + col;
+        for(int i = 0; i < 12; i += 2){
+            y[tmp + 96 * (i >> 1)] = sum[i];//y[tmp + 3 * 32 * (i >> 1)] = sum[i];
+            y[tmp + 14400 + 96 * (i >> 1)] = sum[i + 1];//y[tmp + 14400 + 3 * 32 * (i >> 1)] = sum[i + 1];
+        }
+ 
+    #undef tA2d
 }
 
 template<typename gpu, typename DType>
@@ -142,11 +307,11 @@ template<typename gpu, typename DType>
 void forward(mshadow::Tensor<gpu, 4, DType> &y, const mshadow::Tensor<gpu, 4, DType> &x, const mshadow::Tensor<gpu, 4, DType> &w) {
     // You'll probably need to launch kernels against the right stream to keep MXNet happy
     cudaStream_t s1; //= y.stream_->stream_;
-    cudaStream_t s2, s3, s4, s5; //
+    cudaStream_t s2, s3, s4; //
     cudaStreamCreate(&s1);//
     cudaStreamCreate(&s2);
     cudaStreamCreate(&s3);
-    cudaStreamCreate(&s4); cudaStreamCreate(&s5);
+    cudaStreamCreate(&s4); //cudaStreamCreate(&s5);
     
     // Extract the tensor dimensions into B,M,C,H,W,K
     const int B = x.shape_[0];
@@ -157,68 +322,66 @@ void forward(mshadow::Tensor<gpu, 4, DType> &y, const mshadow::Tensor<gpu, 4, DT
     const int K = w.shape_[2];
     printf("The filter size is K * K, where K = %d \n", K);
     printf("B = %d, M = %d, C = %d, H = %d, W = %d \n", B, M, C, H, W);
-    int Hout = H - K + 1;
-    int Wout = W - K + 1;     
+    //int Hout = H - K + 1;
+    //int Wout = W - K + 1;     
+    /*
     DType *X_unrolled1;
     DType *X_unrolled2;
     DType *X_unrolled3;
     DType *X_unrolled4;
-    DType *X_unrolled5;
+    //DType *X_unrolled5;
     DType *W_unrolled1;
     //DType *W_unrolled2;
     //DType *W_unrolled3;
     //DType *W_unrolled4;
-    cudaMalloc(&X_unrolled1, B/5 * K * K * Hout * Wout * sizeof(DType));
-    cudaMalloc(&X_unrolled2, B/5 * K * K * Hout * Wout * sizeof(DType));
-    cudaMalloc(&X_unrolled3, B/5 * K * K * Hout * Wout * sizeof(DType));
-    cudaMalloc(&X_unrolled4, B/5 * K * K * Hout * Wout * sizeof(DType));
-    cudaMalloc(&X_unrolled5, B/5 * K * K * Hout * Wout * sizeof(DType));
+    cudaMalloc(&X_unrolled1, B/4 * K * K * Hout * Wout * sizeof(DType));
+    cudaMalloc(&X_unrolled2, B/4 * K * K * Hout * Wout * sizeof(DType));
+    cudaMalloc(&X_unrolled3, B/4 * K * K * Hout * Wout * sizeof(DType));
+    cudaMalloc(&X_unrolled4, B/4 * K * K * Hout * Wout * sizeof(DType));
     cudaMalloc(&W_unrolled1, M * K * K * sizeof(DType));
-    //cudaMalloc(&W_unrolled2, M * K * K * sizeof(DType));
-    //cudaMalloc(&W_unrolled3, M * K * K * sizeof(DType));
-    //cudaMalloc(&W_unrolled4, M * K * K * sizeof(DType));
+    */
     // Set the kernel dimensions,    
     dim3 blockDimU(28, 28, 1); // 
-    dim3 gridDimU(B/5, 3, 1);    // 
-    dim3 gridDimU2(B/5, 1, 1);
+    dim3 gridDimU(B/4, 3, 1);    // 
+    dim3 gridDimU2(B/4, 1, 1);
     //cudaDeviceSynchronize();
 
     dim3 blockDim(32, TILE_WIDTH, 1);  // 25, 25
     //dim3 gridDim(B, (Hout * Wout - 1) / TILE_WIDTH + 1, (M - 1) / TILE_WIDTH + 1);
-    dim3 gridDim(B/5, 18/3, 1);
+    dim3 gridDim(B/4, 18/6, 1);
+    matrix_kernel<gpu,DType><<<gridDim, blockDim, 0, s1>>>(y.dptr_, x.dptr_, w.dptr_, 0);
+    matrix_kernel<gpu,DType><<<gridDim, blockDim, 0, s2>>>(y.dptr_, x.dptr_, w.dptr_, 2500);
+    matrix_kernel<gpu,DType><<<gridDim, blockDim, 0, s3>>>(y.dptr_, x.dptr_, w.dptr_, 5000);
+    matrix_kernel<gpu,DType><<<gridDim, blockDim, 0, s4>>>(y.dptr_, x.dptr_, w.dptr_, 7500);
     // Call the kernel                                0 is sharemem s is stream
     //for(int i = 0; i < 1; ++i){
+    /*
     unroll_kernel<gpu,DType><<<gridDimU, blockDimU, 0, s1>>>(X_unrolled1, W_unrolled1, x.dptr_, w.dptr_,0);
-    unroll_kernel<gpu,DType><<<gridDimU2, blockDimU, 0, s2>>>(X_unrolled2, W_unrolled1, x.dptr_, w.dptr_,2000);
-    unroll_kernel<gpu,DType><<<gridDimU2, blockDimU, 0, s3>>>(X_unrolled3, W_unrolled1, x.dptr_, w.dptr_,4000);
-    unroll_kernel<gpu,DType><<<gridDimU2, blockDimU, 0, s4>>>(X_unrolled4, W_unrolled1, x.dptr_, w.dptr_,6000);
-    unroll_kernel<gpu,DType><<<gridDimU2, blockDimU, 0, s5>>>(X_unrolled5, W_unrolled1, x.dptr_, w.dptr_,8000);
+    unroll_kernel<gpu,DType><<<gridDimU2, blockDimU, 0, s2>>>(X_unrolled2, W_unrolled1, x.dptr_, w.dptr_,2500);
+    unroll_kernel<gpu,DType><<<gridDimU2, blockDimU, 0, s3>>>(X_unrolled3, W_unrolled1, x.dptr_, w.dptr_,5000);
+    unroll_kernel<gpu,DType><<<gridDimU2, blockDimU, 0, s4>>>(X_unrolled4, W_unrolled1, x.dptr_, w.dptr_,7500);
     forward_mul_kernel<gpu, DType><<<gridDim, blockDim, 0, s1>>>(y.dptr_, X_unrolled1, W_unrolled1,H,W,K,0);
-    forward_mul_kernel<gpu, DType><<<gridDim, blockDim, 0, s2>>>(y.dptr_, X_unrolled2, W_unrolled1,H,W,K,2000);
-    forward_mul_kernel<gpu, DType><<<gridDim, blockDim, 0, s3>>>(y.dptr_, X_unrolled3, W_unrolled1,H,W,K,4000);
-    forward_mul_kernel<gpu, DType><<<gridDim, blockDim, 0, s4>>>(y.dptr_, X_unrolled4, W_unrolled1,H,W,K,6000);
-    forward_mul_kernel<gpu, DType><<<gridDim, blockDim, 0, s5>>>(y.dptr_, X_unrolled5, W_unrolled1,H,W,K,8000);
+    forward_mul_kernel<gpu, DType><<<gridDim, blockDim, 0, s2>>>(y.dptr_, X_unrolled2, W_unrolled1,H,W,K,2500);
+    forward_mul_kernel<gpu, DType><<<gridDim, blockDim, 0, s3>>>(y.dptr_, X_unrolled3, W_unrolled1,H,W,K,5000);
+    forward_mul_kernel<gpu, DType><<<gridDim, blockDim, 0, s4>>>(y.dptr_, X_unrolled4, W_unrolled1,H,W,K,7500);
+    */
     //}
     cudaStreamSynchronize(s1);
     cudaStreamSynchronize(s2);
     cudaStreamSynchronize(s3);
     cudaStreamSynchronize(s4);
-    cudaStreamSynchronize(s5);
-    //forward_mul_kernel<gpu, DType><<<gridDim, blockDim, 0, s>>>(y.dptr_, X_unrolled, W_unrolled, C,H,W,K,12);
-    
     // Use MSHADOW_CUDA_CALL to check for CUDA runtime errors.
     MSHADOW_CUDA_CALL(cudaDeviceSynchronize());
-    cudaFree(X_unrolled1);
+    /*cudaFree(X_unrolled1);
     cudaFree(X_unrolled2);
     cudaFree(X_unrolled3);
-    cudaFree(X_unrolled4);cudaFree(X_unrolled5);
+    cudaFree(X_unrolled4);//cudaFree(X_unrolled5);
     cudaFree(W_unrolled1);
+    */
     //cudaFree(W_unrolled2);
     //cudaFree(W_unrolled3);
     //cudaFree(W_unrolled4);
 }
-
-
 
 }
 }
