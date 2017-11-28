@@ -89,114 +89,121 @@ template<typename gpu, typename DType>
 __global__ void matrix_kernel(DType *y, DType *x, DType *k, int offset){ //gridDim B/4, 3, 1,  blockDim 25 * 32
     
     __shared__ DType tileA[1250];    // 50 * 25
-    __shared__ DType tileB1[25 * 32];//
-    __shared__ DType tileB2[25 * 32];
-    __shared__ DType tileB3[25 * 32];
-    __shared__ DType tileB4[25 * 32];
-    __shared__ DType tileB5[25 * 32];
-    __shared__ DType tileB6[25 * 32];
-    
+    //__shared__ DType tileB[25 * 32/2 * (6*2)];
+    __shared__ DType tileB[4800];
     int b = blockIdx.x;  // batch index 
     int bx = blockIdx.y; // 3
-    //int by = blockIdx.z; // 1
     int tx = threadIdx.x; // 32
     int ty = threadIdx.y; // 25
-    int index = ty * 32 + tx;
+    //int index = ty * 32 / 2 + tx;
+    int index = ty * 16 + tx;
     #define tA2d(i1, i0) tileA[i1 * 50 + i0]
-    //DType val[6] = {0};
-    //int tileTmpIndex = 0; 
-    //int local_w, local_h, tileFirstRowIndex;
-    // load filters from global to shared memory
-   if(ty >= 5){ 
-        //if(tx < 25){
-        if(index < 785){
-            int tileAIndex = (ty - 5) * 32 + tx;
-            int newTy = tileAIndex / 25;
-            int newTx = tileAIndex % 25;
-            //int kIndex = ty * 25 + tx; 
+    //if(tx < 25){
+            //int tileAIndex = (ty - 5) * 32 + tx;
+            //int newTy = tileAIndex / 25;
+            //int newTx = tileAIndex % 25;
+            int kIndex = ty * 25 + tx, tAIndex = tx * 50 + ty; //tAIndex2 = (tx); 
+            tileA[tAIndex] = k[kIndex];
+            tileA[tAIndex + TILE_WIDTH] = k[kIndex + 625];
+            if(tx < 9){
+                int tAIndex2 = (tx + 16) * 50 + ty;
+                tileA[tAIndex2] = k[kIndex + 16];
+                tileA[tAIndex2 + TILE_WIDTH] = k[kIndex + 625 + 16];
+            }
             //tA2d(tx, ty) = k[kIndex];                               //A[Aindex];
             //tA2d(tx, ty + TILE_WIDTH) = k[kIndex + 625];
-            tA2d(newTx, newTy) = k[tileAIndex];
-            tA2d(newTx, newTy + TILE_WIDTH) = k[tileAIndex + 625];
-        }
-    }else{
+            //tA2d(newTx, newTy) = k[tileAIndex];
+            //tA2d(newTx, newTy + TILE_WIDTH) = k[tileAIndex + 625];
+    //}
     // load data from global to shared memory
-    DType val[6] = {0};
+    DType val[12] = {0};
     int tileTmpIndex = 0;
-    int local_w, local_h, tileFirstRowIndex;
-    /*
-    if(bx == 0 && index < 152){
-        for(int h = 0; h < 6; ++h){
-            val[h] = x[(b + offset) * 784 + 0 * 784 + index + 112 * h]; //x4d(b + offset, 0, local_h, local_w);
+    int local_w, local_h, tileFirstRowIndex, xIndex;
+    
+    if(bx == 0 && index < 100){ // 152
+        local_w = index % 20;
+        local_h = index / 20;
+        xIndex = (b + offset) * 784 + local_h * 28 + local_w;
+        for(int h = 0; h < 12; ++h){                          // 112
+            val[h] = x[xIndex + 56 * h];
+            //val[h] = x[(b + offset) * 784 + 0 * 784 + index + 56 * h];//x4d(b + offset, 0, local_h, local_w);
         }   
-        local_w = index % 28;
-        local_h = index / 28;
+        //local_w = index % 28;
+        //local_h = index / 28;
         for(int i = 0; i < 5; ++i){
             for(int j = 0; j < 5; ++j){
                 if(local_w - j >= 0 && local_w+5-1-j < 28 && local_h - i >= 0){ //&& local_h + 5 - 1 - i < 28)
                     tileFirstRowIndex = (local_h - i) * 24 + local_w - j;
-                    if(0 <= tileFirstRowIndex && tileFirstRowIndex < 32 ){
-                        tileTmpIndex = (i * 5 + j) * 32 + tileFirstRowIndex;
-                        tileB1[tileTmpIndex] = val[0];
-                        tileB2[tileTmpIndex] = val[1];
-                        tileB3[tileTmpIndex] = val[2];
-                        tileB4[tileTmpIndex] = val[3];
-                        tileB5[tileTmpIndex] = val[4];
-                        tileB6[tileTmpIndex] = val[5];
+                    if(0 <= tileFirstRowIndex && tileFirstRowIndex < 16 ){ //32
+                        tileTmpIndex = (i * 5 + j) * 16 + tileFirstRowIndex;
+                        for(int k = 0; k < 12; ++k){
+                            tileB[tileTmpIndex + 25 * 16 * k] = val[k];
+                        }
                     }
                 }
             }
         }
     }
 
-    if(bx == 1 && index < 152){
-        for(int h = 0; h < 6; ++h){
-            val[h] = x[(b + offset) * 784 + 0 * 784 + index + 36 + 112 * h];
+    if(bx == 1 && index < 120){
+        if(index < 60){
+            local_w = index % 12 + 16;
+            local_h = index / 12;
+            xIndex = (b + offset) * 784 + local_h * 28 + local_w;
+            for(int h = 0; h < 12; ++h){
+                val[h] = x[xIndex + 56 * h];
+                //val[h] = x[(b + offset) * 784 + 0 * 784 + index + 16 + 56 * h];
+            }
+            //local_w = (index + 16) % 28;
+            //local_h = (index + 16) / 28;
+        }else{
+            local_w = (index - 60) % 12;
+            local_h = (index - 60) / 12 + 1;
+            xIndex = (b + offset) * 784 + local_h * 28 + local_w;
+            for(int h = 0; h < 12; ++h){
+                val[h] = x[xIndex + 56 * h];
+            }
         }
-            local_w = (index + 36) % 28;
-            local_h = (index + 36) / 28;
         for(int i = 0; i < 5; ++i){
             for(int j = 0; j < 5; ++j){
                 if(local_w - j >= 0 && local_w+5-1-j < 28 && local_h - i >= 0){// && local_h + 5 - 1 - i<28){
                     tileFirstRowIndex = (local_h - i) * 24 + local_w - j;
-                    if(32<= tileFirstRowIndex && tileFirstRowIndex < 64 ){
-                        tileTmpIndex = (i * 5 + j) * 32 + tileFirstRowIndex - 32;
-                        tileB1[tileTmpIndex] = val[0];
-                        tileB2[tileTmpIndex] = val[1];
-                        tileB3[tileTmpIndex] = val[2];
-                        tileB4[tileTmpIndex] = val[3];
-                        tileB5[tileTmpIndex] = val[4]; 
-                        tileB6[tileTmpIndex] = val[5]; 
+                    if(16<= tileFirstRowIndex && tileFirstRowIndex < 32 ){
+                        tileTmpIndex = (i * 5 + j) * 16 + tileFirstRowIndex - 16;
+                        for(int k = 0; k < 12; ++k){
+                            tileB[tileTmpIndex + 25 * 16 * k] = val[k];
+                        }
                     }
                 }
             }
         }
     }
 
-    if(bx == 2 && index < 152){
-        for(int h = 0; h < 6; ++h){
-            val[h] = x[(b + offset) * 784 + 0 * 784 + index + 72 + 112 * h];
+    if(bx == 2 && index < 100){
+        local_w = index % 20 + 8;
+        local_h = index / 20 + 1;
+        xIndex = (b + offset) * 784 + local_h * 28 + local_w;
+        for(int h = 0; h < 12; ++h){
+            val[h] = x[xIndex + 56 * h];
+            //val[h] = x[(b + offset) * 784 + 0 * 784 + index + 36 + 56 * h];
         }    
-        local_w = (index + 72) % 28;
-        local_h = (index + 72) / 28;
+        //local_w = (index + 36) % 28;
+        //local_h = (index + 36) / 28;
         for(int i = 0; i < 5; ++i){
             for(int j = 0; j < 5; ++j){
                 if(local_w - j >= 0 && local_w+5-1-j < 28 && local_h - i >= 0){// && local_h + 5 - 1 - i<28){
                     tileFirstRowIndex = (local_h - i) * 24 + local_w - j;
-                    if(64 <= tileFirstRowIndex && tileFirstRowIndex < 96){
-                        tileTmpIndex = (i * 5 + j) * 32 + tileFirstRowIndex - 64;
-                            tileB1[tileTmpIndex] = val[0];
-                            tileB2[tileTmpIndex] = val[1];
-                            tileB3[tileTmpIndex] = val[2];
-                            tileB4[tileTmpIndex] = val[3];
-                            tileB5[tileTmpIndex] = val[4];
-                            tileB6[tileTmpIndex] = val[5];
+                    if(32 <= tileFirstRowIndex && tileFirstRowIndex < 48){
+                        tileTmpIndex = (i * 5 + j) * 16 + tileFirstRowIndex - 32;
+                        for(int k = 0; k < 12; ++k){
+                            tileB[tileTmpIndex + 25 * 16 * k] = val[k];
+                        }
                     }
                 }
             }
         }
     }
-    */
+   /* 
     int local_index, xIndex, bound;
     if(index < 152){
         xIndex = (b + offset) * 784 + index + 36 * bx;
@@ -224,43 +231,29 @@ __global__ void matrix_kernel(DType *y, DType *x, DType *k, int offset){ //gridD
             }
         }
     }
-
-    }
+    */
     __syncthreads();
     // compute
-    DType sum[12] = {0};
+    DType sum[24] = {0};
     DType tmpA1, tmpA2, tmpB;
     int tileBIndex;
     for(int k = 0; k < TILE_WIDTH; ++k){
         tmpA1 = tA2d(k, ty); tmpA2 = tA2d(k, ty + 25);
-        tileBIndex = k * 32 + tx;
-        tmpB = tileB1[tileBIndex];  
-        sum[0] += tmpA1 * tmpB; 
-        sum[1] += tmpA2 * tmpB;
-        tmpB = tileB2[tileBIndex];
-        sum[2] += tmpA1 * tmpB;
-        sum[3] += tmpA2 * tmpB;
-        tmpB = tileB3[tileBIndex];
-        sum[4] += tmpA1 * tmpB;
-        sum[5] += tmpA2 * tmpB; 
-        tmpB = tileB4[tileBIndex];
-        sum[6] += tmpA1 * tmpB;
-        sum[7] += tmpA2 * tmpB; 
-        tmpB = tileB5[tileBIndex];
-        sum[8] += tmpA1 * tmpB;
-        sum[9] += tmpA2 * tmpB; 
-        tmpB = tileB6[tileBIndex];
-        sum[10] += tmpA1 * tmpB;
-        sum[11] += tmpA2 * tmpB; 
+        tileBIndex = k * 16 + tx;
+        for(int i = 0; i < 12; ++i){
+            tmpB = tileB[tileBIndex + 25 * 16 *i];
+            sum[i * 2] += tmpA1 * tmpB;
+            sum[i * 2 + 1] += tmpA2 * tmpB;
+        }
     }
     //__syncthreads();
     
     //write to global memory
-        int row = ty, col = bx * 32 + tx;
+        int row = ty, col = bx * 16 + tx;
         int tmp = (b + offset) * 28800 + row *576 + col;
-        for(int i = 0; i < 12; i += 2){
-            y[tmp + 96 * (i >> 1)] = sum[i];//y[tmp + 3 * 32 * (i >> 1)] = sum[i];
-            y[tmp + 14400 + 96 * (i >> 1)] = sum[i + 1];//y[tmp + 14400 + 3 * 32 * (i >> 1)] = sum[i + 1];
+        for(int i = 0; i < 24; i += 2){
+            y[tmp + 48 * (i >> 1)] = sum[i];//y[tmp + 3 * 32 * (i >> 1)] = sum[i];
+            y[tmp + 14400 + 48 * (i >> 1)] = sum[i + 1];//y[tmp + 14400 + 3 * 32 * (i >> 1)] = sum[i + 1];
         }
  
     #undef tA2d
@@ -346,7 +339,7 @@ void forward(mshadow::Tensor<gpu, 4, DType> &y, const mshadow::Tensor<gpu, 4, DT
     dim3 gridDimU2(B/4, 1, 1);
     //cudaDeviceSynchronize();
 
-    dim3 blockDim(32, TILE_WIDTH, 1);  // 25, 25
+    dim3 blockDim(16, TILE_WIDTH, 1);  // 25, 25
     //dim3 gridDim(B, (Hout * Wout - 1) / TILE_WIDTH + 1, (M - 1) / TILE_WIDTH + 1);
     dim3 gridDim(B/4, 18/6, 1);
     matrix_kernel<gpu,DType><<<gridDim, blockDim, 0, s1>>>(y.dptr_, x.dptr_, w.dptr_, 0);
