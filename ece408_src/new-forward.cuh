@@ -117,7 +117,7 @@ __global__ void matrix_kernel(DType *y, DType *x, DType *k, int offset){ //gridD
     //}
     // load data from global to shared memory
     DType val[12] = {0};
-    int tileTmpIndex = 0;
+    int tileTmpIndex;
     int local_w, local_h, tileFirstRowIndex, xIndex;
     
     if(bx == 0 && index < 100){ // 152
@@ -241,7 +241,7 @@ __global__ void matrix_kernel(DType *y, DType *x, DType *k, int offset){ //gridD
         tmpA1 = tA2d(k, ty); tmpA2 = tA2d(k, ty + 25);
         tileBIndex = k * 16 + tx;
         for(int i = 0; i < 12; ++i){
-            tmpB = tileB[tileBIndex + 25 * 16 *i];
+            tmpB = tileB[tileBIndex + 400 *i];
             sum[i * 2] += tmpA1 * tmpB;
             sum[i * 2 + 1] += tmpA2 * tmpB;
         }
@@ -249,13 +249,21 @@ __global__ void matrix_kernel(DType *y, DType *x, DType *k, int offset){ //gridD
     //__syncthreads();
     
     //write to global memory
-        int row = ty, col = bx * 16 + tx;
-        int tmp = (b + offset) * 28800 + row *576 + col;
+        int col = bx * 16 + tx; // row = ty;
+        int tmp = (b + offset) * 28800 + ty *576 + col;
+        for(int i = 0; i < 12; ++i){
+            y[tmp + 48 * i] = sum[i << 1];
+        }
+        tmp += 14400;
+        for(int i = 0; i < 12; ++i){
+            y[tmp + 48 * i] = sum[i*2 + 1];
+        }
+        /*
         for(int i = 0; i < 24; i += 2){
             y[tmp + 48 * (i >> 1)] = sum[i];//y[tmp + 3 * 32 * (i >> 1)] = sum[i];
             y[tmp + 14400 + 48 * (i >> 1)] = sum[i + 1];//y[tmp + 14400 + 3 * 32 * (i >> 1)] = sum[i + 1];
         }
- 
+        */
     #undef tA2d
 }
 
@@ -300,11 +308,11 @@ template<typename gpu, typename DType>
 void forward(mshadow::Tensor<gpu, 4, DType> &y, const mshadow::Tensor<gpu, 4, DType> &x, const mshadow::Tensor<gpu, 4, DType> &w) {
     // You'll probably need to launch kernels against the right stream to keep MXNet happy
     cudaStream_t s1; //= y.stream_->stream_;
-    cudaStream_t s2, s3, s4; //
+    cudaStream_t s2, s3, s4,s5; //
     cudaStreamCreate(&s1);//
     cudaStreamCreate(&s2);
     cudaStreamCreate(&s3);
-    cudaStreamCreate(&s4); //cudaStreamCreate(&s5);
+    cudaStreamCreate(&s4); cudaStreamCreate(&s5);
     
     // Extract the tensor dimensions into B,M,C,H,W,K
     const int B = x.shape_[0];
@@ -341,11 +349,12 @@ void forward(mshadow::Tensor<gpu, 4, DType> &y, const mshadow::Tensor<gpu, 4, DT
 
     dim3 blockDim(16, TILE_WIDTH, 1);  // 25, 25
     //dim3 gridDim(B, (Hout * Wout - 1) / TILE_WIDTH + 1, (M - 1) / TILE_WIDTH + 1);
-    dim3 gridDim(B/4, 18/6, 1);
+    dim3 gridDim(B/5, 18/6, 1);
     matrix_kernel<gpu,DType><<<gridDim, blockDim, 0, s1>>>(y.dptr_, x.dptr_, w.dptr_, 0);
-    matrix_kernel<gpu,DType><<<gridDim, blockDim, 0, s2>>>(y.dptr_, x.dptr_, w.dptr_, 2500);
-    matrix_kernel<gpu,DType><<<gridDim, blockDim, 0, s3>>>(y.dptr_, x.dptr_, w.dptr_, 5000);
-    matrix_kernel<gpu,DType><<<gridDim, blockDim, 0, s4>>>(y.dptr_, x.dptr_, w.dptr_, 7500);
+    matrix_kernel<gpu,DType><<<gridDim, blockDim, 0, s2>>>(y.dptr_, x.dptr_, w.dptr_, 2000);
+    matrix_kernel<gpu,DType><<<gridDim, blockDim, 0, s3>>>(y.dptr_, x.dptr_, w.dptr_, 4000);
+    matrix_kernel<gpu,DType><<<gridDim, blockDim, 0, s4>>>(y.dptr_, x.dptr_, w.dptr_, 6000);
+    matrix_kernel<gpu,DType><<<gridDim, blockDim, 0, s5>>>(y.dptr_, x.dptr_, w.dptr_, 8000);
     // Call the kernel                                0 is sharemem s is stream
     //for(int i = 0; i < 1; ++i){
     /*
@@ -363,6 +372,7 @@ void forward(mshadow::Tensor<gpu, 4, DType> &y, const mshadow::Tensor<gpu, 4, DT
     cudaStreamSynchronize(s2);
     cudaStreamSynchronize(s3);
     cudaStreamSynchronize(s4);
+    cudaStreamSynchronize(s5);
     // Use MSHADOW_CUDA_CALL to check for CUDA runtime errors.
     MSHADOW_CUDA_CALL(cudaDeviceSynchronize());
     /*cudaFree(X_unrolled1);
