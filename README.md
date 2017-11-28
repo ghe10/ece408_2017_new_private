@@ -36,11 +36,11 @@ You may wish to stay ahead of these deadlines (particularly, allow more than two
     1. [Run the MXNet baseline forward CPU pass.]()
     2. [Run the MXNet baseline forward GPU pass.]()
     3. [Generate a profile of the GPU forward pass using `nvprof`.]()
-2. [Milestone 2: A New CPU Layer in MXNet: Due 11/17/2017](#markdown-header-milestone-2)
+2. [Milestone 2: A New CPU Layer in MXNet: Due 10pm 11/17/2017](#markdown-header-milestone-2)
     1. [Implement a CPU convolution pass in MXNet]()
-2. [Milestone 3: A New GPU Layer in MXNet: Due 12/1/2017](#markdown-header-milestone-3)
+2. [Milestone 3: A New GPU Layer in MXNet: Due 5pm 12/1/2017](#markdown-header-milestone-3)
     1. [Implement a GPU convolution in MXNet]()
-3. [Final Submission: Optimized GPU Forward Implementation: Due 12/15/2017](#markdown-header-final-submission)
+3. [Final Submission: Optimized GPU Forward Implementation: Due 5pm 12/15/2017](#markdown-header-final-submission)
     1. [Implement an optimized GPU convolution in MXNet]()
     2. [Final Report](#markdown-header-final-report)
 
@@ -50,10 +50,47 @@ The easiest way to develop the project is to use rai through the following prebu
 
 **NOTE:** Even if you use your own local development environment, your final code must run within the RAI system. 
 
+### Using RAI
+
+    rai -p <project-folder>
+
+This causes the following things to happen:
+
+* RAI client: upload the project folder to AWS
+* RAI client: Notify a RAI server that a job is ready
+* RAI server: downloads the folder from AWS
+* RAI server: starts the docker container specified in `rai_build.yml`
+* RAI server: uses docker container to execute the steps specified in `rai_build.yml`
+* RAI server: uploads `/build` directory to AWS
+* RAI client: gives you the link to that build directory
+
+So, if you want any results from your run, you need to generate those results in `/build`. 
+The provided `rai_build.yml` moves everything to the `/build` directory in an early step.
+
+### Final Submissions through RAI
+
+To make an official project submission, you will run
+
+    rai -p <project folder> --submit=<submission kind>
+
+The `--submit` flag accepts `m2` for milestone 2, `m3` for milestone 3, and `final` for the final submission. 
+
+    rai -p <project-folder-with-working-cpu-implementation> --submit=m2
+
+Using the `--submit` flag
+* enforces a specific `rai_build.yml` depending on which kind of submission you do.
+* requires the existence of `report.pdf`
+* Records your operation time, user time, system time, and correctness in a database. An anonymous version of these results (not your code!) will be visible to other students.
+
+To ensure that `--submit` goes smoothly, ensure your code works with the provided python scripts. They are similar to the ones used by `--submit`.
+
+**Only your most recent submission will be graded. Ensure that your final submission is the one you want to be graded**.
+
 ## Milestone 1
+
 **Getting Started: Due Friday November 10th, 2017**
 
-Nothing must be turned in for this milestone, but this contributes to the final report.
+Nothing must be turned in for this milestone, but content will be used in Milestone 2.
 
 ### Getting Set Up and Getting Bugfixes
 
@@ -61,20 +98,30 @@ Clone this repository to get the project directory.
 
     git clone https://github.com/webgpu/2017fa_ece408_project.git
 
-We suggest using rai to develop your project. **You will use rai to submit your project**.
+Download the rai binary for your platform. You will probably use it for development, and definitely use it for submission.
 
-Download the rai binary for your platform
-
-| Operating System | Architecture | Stable Version Link                                                             |
+| Operating System | Architecture | Stable Version (0.2.19) Link                                                             |
 | ---------------- | ------------ | ------------------------------------------------------------------------------- |
-| Linux            | amd64        | [URL](http://files.rai-project.com/dist/rai/stable/latest/linux-amd64.tar.gz)   |
-| Linux            | ppc64le      | [URL](http://files.rai-project.com/dist/rai/stable/latest/linux-ppc64le.tar.gz) |
-| OSX/Darwin       | amd64        | [URL](http://files.rai-project.com/dist/rai/stable/latest/darwin-amd64.tar.gz)  |
-| Windows          | amd64        | [URL](http://files.rai-project.com/dist/rai/stable/latest/windows-amd64.tar.gz) |
+| Linux            | amd64        | [URL](https://github.com/rai-project/rai/releases/download/v0.2.19/linux-amd64.tar.gz)   |
+| OSX/Darwin       | amd64        | [URL](https://github.com/rai-project/rai/releases/download/v0.2.19/darwin-amd64.tar.gz)  |
+| Windows          | amd64        | [URL](https://github.com/rai-project/rai/releases/download/v0.2.19/windows-amd64.tar.gz) |
 
 You should have received a `.rai_profile` file by email.
 Put that file in `~/.rai_profile` (Linux/macOS) or `%HOME%/.rai_profile` (Windows).
 As soon as you and your two teammates agree on a team name, fill in the corresponding entry in your `.rai_profile`.
+Your `.rai_profile` should look something like this (indented with tabs!)
+
+    profile:
+        firstname: <your-given-name>
+        lastname: <your-surname>
+        username: <your-username>
+        email: <your-access-key>
+        access_key: <your-access-key>
+        secret_key: <your-secret-key>
+        affiliation: uiuc
+        team:
+            name: <your-team-name-here>
+
 **Be sure you all use the same team name**.
 
 Some more info is available on the [Client Documentation Page](https://github.com/rai-project/rai).
@@ -107,9 +154,10 @@ This environment includes a prebuilt MXNet (so rai will only do a partial compil
 
 The `resources:` key specifies what computation resources will be available to the execution.
 
-The `commands:` key specifies the recipe that rai will execute. `./build.sh` copies the files in `ece408_src` to `src/operator/custom/` in the MXNet source tree, and then compiles MXNet and installs the MXNet python bindings into the environment.
-You do not need to modify `build.sh` to successfully complete the project, but look at it if you are curious.
-`python /src/m1.1_forward_mxnet_conv.py` runs the `m1.1_forward_mxnet_conv.py` python program.
+The `commands:` key specifies the recipe that rai will execute. First, the project files are copied to the `/build` directory.
+Then the files in `ece408_src` are copied to `src/operator/custom/` in the MXNet source tree.
+MxNet is recompiled, and the pythong bindings are installed.
+`python /src/m1.1.py` runs the `m1.1.py` python program.
 
 You should see the following output:
 
@@ -117,7 +165,8 @@ You should see the following output:
     Loading model... done
     EvalMetric: {'accuracy': 0.8673}
 
-There is no specific deliverable for this portion.
+**Deliverables (to be submitted with Milestone 2)** 
+In your report, confirm that this is the output you see. Use `/usr/bin/time` to measure the elapsed time of the whole python program.
 
 ### 1.2: Run the baseline GPU implementation
 
@@ -139,8 +188,8 @@ Again, submit to rai
 
     rai -p <project-folder>
 
-You should see the same accuracy as the CPU version. 
-There is no specific deliverable for this portion.
+**Deliverables (to be submitted with Milestone 2)** 
+In your report, confirm the accuracy. Use `/usr/bin/time` to measure the elapsed time of the whole python program.
 
 ### 1.3 Generate a NVPROF Profile
 
@@ -154,12 +203,12 @@ Then, modify `rai_build.yml` to generate a profile instead of just execuing the 
 
 You should see something that looks like the following:
 
-    ✱ Running nvprof python /src/m1.2_forward_mxnet_conv.py
+    ✱ Running nvprof python m1.2.py
     Loading fashion-mnist data... done
-    ==308== NVPROF is profiling process 308, command: python     /src/m1.2_forward_mxnet_conv.py
+    ==308== NVPROF is profiling process 308, command: python     /src/m1.2.py
     Loading model... done
     EvalMetric: {'accuracy': 0.8673}
-    ==308== Profiling application: python /src/m1.2_forward_mxnet_conv.py
+    ==308== Profiling application: python /src/m1.2.py
     ==308== Profiling result:
     Time(%)      Time     Calls       Avg       Min       Max  Name
      30.77%  8.7488ms         1  8.7488ms  8.7488ms  8.7488ms  sgemm_128x128x8_NT_vec
@@ -175,15 +224,17 @@ You should see something that looks like the following:
     ... < snip > ...
 
 
-
 You can see how much time MXNet is spending on a variety of the operators.
 Each line correspnds to a CUDA kernel or an API call.
 There are columns corresponding to percentage of time consumed, total time, number of calls, and average/min/max time of those calls.
 
 You can find more information about nvprof in the [CUDA Toolkit Documentation](http://docs.nvidia.com/cuda/profiler-users-guide/index.html#nvprof-overview)
 
+**Deliverables (to be submitted with Milestone 2)** 
+In your report, list a table of the most time-consuming kernels.
+
 ## Milestone 2
-**A New CPU Convolution Layer in MxNet: Due Friday November 17th, 2017**
+**A New CPU Convolution Layer in MxNet: Due 10pm Friday November 17th, 2017**
 
 A draft of the `report.pdf` with content up through Milestone 2 must be submitted **through rai** for this milestone.
 
@@ -195,6 +246,21 @@ See the [description](#markdown-header-skeleton-code-description) of the skeleto
 
 Modify `ece408_src/new-forward.h` to implement the forward convolution described in [Chapter 16 of the textbook](https://wiki.illinois.edu/wiki/display/ECE408Fall2017/Textbook+Chapters).
 The performance of the CPU convolution is not part of the project evaluation.
+The algorithm is also below, for your convenience
+
+    for b = 0 .. B)                    // for each image in the batch 
+        for m = 0 .. M                 // for each output feature maps
+            for h = 0 .. H_out         // for each output element
+                for w = 0 .. W_out
+                {
+                    y[b][m][h][w] = 0;
+                    for c = 0 .. C     // sum over all input feature maps
+                        for p = 0 .. K // KxK filter
+                            for q = 0 .. K
+                                y[b][m][h][w] += x[b][c][h + p][w + q] * k[m][c][p][q]
+                }
+
+Unlike the convolutions described in the class, note that this one is not centered on the input image.
 
 Because this operator is different than the built-in mxnet operator, you will need to load a different model.
 `m2.1.py` handles this for you.
@@ -216,25 +282,30 @@ The correctness does depend on the data size. Check your correctness on the full
 
 For example, you could modify `rai_build.yml` to run
 
-    - nvprof -o timeline.nvprof python m2.1.py ece408-low 100
-    - nvprof --analysis-metrics -o analysis.nvprof ece408-low  100
-
-to generate two complementary profile files, running on smaller datasets.
-You could then download the resulting folder and open it with `nvvp`.
+    - python m2.1.py ece408-low 100
 
 | Correctness | Size | Model  |
 |-------------| -----| -----  |
 | ece408-high | 10000 (default) | 0.8562 |
 | ece408-low  | 10000 (default) | 0.629  |
 
+The provided `m2.1.py` is identical to the one used by `--submit=m2`.
+You may modify `m2.1.py` as you please, but check that `--submit=m2` will still invoke your code correctly.
+
+**Deliverables**
 Use 
 
-    rai -p <project folder> --submit
+    rai -p <project folder> --submit=m2
 
 to mark your submission. This will notify the teaching staff of which `report.pdf` draft to consider.
 
+This will run your code against the two datasets, and check the time and correctness.
+
+Your `report.pdf` at this stage should contain content up through M2.1  described in the final report section.
+
+
 ## Milestone 3
-**A New GPU Convolution Layer in MxNet: Due Friday December 1st, 2017**
+**A New GPU Convolution Layer in MxNet: Due 5pm Friday December 1st, 2017**
 
 A draft of the `report.pdf` with content up through Milestone 3 must be submitted **through rai** for this milestone.
 
@@ -244,15 +315,16 @@ A draft of the `report.pdf` with content up through Milestone 3 must be submitte
 
 Modify `ece408_src/new-forward.cuh` to implement a forward GPU convolution.
 You may run your code with `python m3.1.py`. It takes the same arguments as `m2.1py`.
+Again, if you choose to modify `m3.1.py`, be sure the original still works with your convolution implementation.
 
-### 3.2 Create a profile with `nvprof`.
+### 3.2 Create a GPU profile with `nvprof`.
 
 Once you have a simple GPU implementation, modify `rai_build.py` to create a profile with NVPROF.
 You should see something like this:
 
-    ✱ Running nvprof python /src/m3.1.py
+    ✱ Running nvprof python m3.1.py
     Loading fashion-mnist data... done
-    ==308== NVPROF is profiling process 308, command: python /src/m3.1.py
+    ==308== NVPROF is profiling process 308, command: python m3.1.py
     Loading model... done
     Time: 14.895404
     Correctness: 0.8562 Batch Size: 10000 Model: ece408-high
@@ -263,16 +335,26 @@ You should see something like this:
 
 In this example, the forward layer took 14.8954 seconds, and the forward_kernel took 14.8952 seconds.
 
-Again, use `rai -p <project folder> --submit` to submit your code.
+You can create a single profile for ece408-high with 10000 images.
+
+**Deliverables**
+Again, use `rai -p <project folder> --submit=m3` to submit your code.
+
+Your `report.pdf` at this stage should contain content up through M3.1 described in the final report section.
 
 ## Final Submission
-**An Optimized Layer and Final Report: Due Friday December 15th, 2017**
+**An Optimized Layer and Final Report: Due 5pm Friday December 15th, 2017**
 
 ### Optimized Layer
 
 Optimize your GPU convolution.
 
 Your implementation will be partially graded on its performance relative to other optimized implementations from the class.
+
+Your implementation must work with `rai -p <project-folder> --submit=final`.
+This means all your source files must be in `ece408_src`, and your implementation must work when they are copied to `src/operator/custom` in the mxnet tree, and `make` is invoked on the mxnet tree.
+This is done in the provided `rai_build.yml`.
+Likewise, the provided `final.py` provides an example of the script that will be used to time your implementation.
 
 All of your code for this and the later milestones must be executed between `auto start = ...` and `auto end = ...` in `new-inl.h`.
 The easiest way to ensure this is that all of your code should be in `forward()` or called by `forward()` from `new-forward.cuh` or `new-forward.h`.
@@ -286,38 +368,38 @@ You may use nvprof to collect more detailed information through timeline and ana
 you can collect the generated files by following the download link reported by rai at the end of the execution.
 `--analysis-metrics` significantly slows the run time, you may wish to modify the python scripts to run on smaller datasets during this profiling.
 
-**Only your last `--submit` will be graded. Be sure that your final `--submit` is the one you want to be graded.**
+The ranking is determined by the minimum run time of kernels with correct inferences which are run with the `--submit` flag.
+The `rai ranking` command is not the final word: the staff will re-run all final submissions 3 times and choose the fastest result as your time.
+THe ranking is determined solely by the same value printed by `Op Time:` during your run.
+That `Op Time` is computed by wrapping the mxnet op that you implement in a timer.
+
+**Deliverables**
 
 ### Final Report
 
 You should provide a brief PDF final report `report.pdf`, with the following content.
+The report does not need to be a particular length, but should be long enough to cover all of this content.
 
 1. **Baseline Results**
-    1. M1.1: mxnet CPU layer correctness
+    1. M1.1: mxnet CPU layer correctness and elapsed time for the whole python program.
+     You can measure the elapsed time of the program with the `time` command.
     2. M1.2/M1.3: mxnet GPU layer performance results (`nvprof` profile). Include your profile, and describe in a few words how the GPU is spending its time.
-    3. M2.1: your baseline cpu implementation performance results (time)
-    4. M3.1: your baseline gpu implementation performance results (time, `nvprof` profile)
+    This is to confirm you can generate a profile and can interpret it.
+    3. M2.1: your baseline cpu implementation correctness and performance results (time).
+    The `Op Time:` printed by the program will show the time just for the convolution layer.
+    The implementation should have the expected correctness.
+    Include how you divided work amongst your team (even though there is not much work).
+    4. M3.1: your baseline gpu implementation performance results (time, `nvprof` profile).
+    The implementation should have the expected correctness.
+    Include how you divided work amongst your team (even though there is not much work).
 2. **Optimization Approach and Results**
     * how you identified the optimization opportunity
     * why you thought the approach would be fruitful
     * the effect of the optimization. was it fruitful, and why or why not. Use nvprof as needed to justify your explanation.
     * Any external references used during identification or development of the optimization
+    * How  your team organized and divided up this work.
 3. **References** (as needed)
-
-### Final submission through RAI
-
-To make an official project submission, you will run
-
-    rai -p . --submit
-
-The `--submit` flag
-* enforces a specific rai_build.yml
-* requires the existence of `report.pdf`
-* Records your batch size, operation time, user time, system time, and correctness in a database. An anonymous version of these results (not your code!) will be visible to other students.
-
-The submit flag will run `build.sh`, which should build your code and install the python bindings (like the provided `build.sh`). Then it will run `python final.py`. You must ensure that your project works under those constraints. Do not modify `final.py`.
-
-**Only your most recent submission will be graded. Ensure that your final submission is the one you want to be graded**.
+4. **(Optional) Suggestions for Improving Next Year**
 
 ### Rubric
 
@@ -333,7 +415,8 @@ The submit flag will run `build.sh`, which should build your code and install th
 
 `new-forward.h` and `new-forward.cuh` contain skeleton implementations for CPU and GPU convolutions. You can complete the project by modifying only these two files. These functions are called from `Forward()` in `new-inl.h`.
 
-The code in `new-inl.h`, `new.cc`, and `new.cu` describes the convolution layer to MXNet. You will not need to modify these files, though you can if you want to.
+The code in `new-inl.h`, `new.cc`, and `new.cu` describes the convolution layer to MXNet. You should not modify these files. They are provided for your curiosity.
+As of rai 0.2.20, When you use the `--submit` flag, a golden version of these files from [here](https://github.com/cwpearson/2017fa_ece408_mxnet_docker/tree/master/ece408-src) is used.
 
 | File | Function | Description |
 | -- | -- | -- |
@@ -375,7 +458,6 @@ When testing your implementation, you should achieve these accuracy values for t
 
 There is also one model used in milestone 1.
 
-
 | Prefix | Test Set Accuracy |
 | -- | -- |
 | `models/baseline` | 0.8673 |
@@ -387,8 +469,14 @@ Or, you can define a macro/function similar to `wbCheck` used in WebGPU.
 
 ### Profiling
 
-You can gather detailed profile information with `nvprof`.
-You can gather a timeline like the following:
+You can gather detailed GPU profile information with `nvprof`.
+To use `nvprof`, you'll need to be using the `cwpearson/2017fa_ece408_mxnet_docker:amd64-gpu-latest` image.
+
+You can see some simple information like so (as we did in milestone 1):
+
+    nvprof <your command here>
+
+You can gather a timeline file like the following:
 
     nvprof -o timeline.nvprof <your command here>
 
@@ -402,7 +490,6 @@ You can additionally gather some detailed performance metrics.
 This will generate `timeline.nvprof` and `analysis.nvprof`.
 
 You will need to follow the link rai prints after the execution to retrieve these files.
-
 You can use the NVIDIA Visual Profiler (nvvp) to import those files.
 You will need to install nvvp on your own machine. It can be downloaded as part of the CUDA SDK.
 
@@ -411,6 +498,31 @@ To import the files:
 * timeline data file should be your timeline.nvprof
 * event/metrics data file should be your analysis.nvprof.
 * finish
+
+### Installing NVVP on EWS
+
+This will install nvvp on the EWS machines. The process will be similar for any machine without an NVIDIA GPU.
+
+Establish an ssh session with x-forwarding
+
+    ssh -Y <netid>@linux.ews.illinois.edu
+
+Download CUDA toolkit for CentOS 7
+
+    wget https://developer.nvidia.com/compute/cuda/9.0/Prod/local_installers/cuda_9.0.176_384.81_linux-run -O cuda9.run
+
+Install nvvp (to `~/software/cuda-9.0`. You may choose a different location.) This takes a while.
+
+    chmod +x cuda9.run
+    ./cuda9.run --silent --toolkit --toolkitpath=$HOME/software/cuda-9.0
+
+Free up your EWS space (I'm not sure what the disk quotas are)
+
+    rm cuda9.run
+
+Optional: modify .bashrc to add `~/software/cuda-9.0/bin` to your path. Or, just run it
+
+    ~/software/cuda-9.0/bin/nvvp &
 
 ### Comparing GPU implementation to CPU implementation
 

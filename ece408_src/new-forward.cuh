@@ -10,14 +10,22 @@ namespace mxnet
 namespace op
 {
 
+<<<<<<< HEAD
 template<typename gpu, typename DType>
 __global__ void forward_mul_kernel(DType *y, DType *B, DType *A, const int H, const int W, const int K, int offset) {
+=======
+
+
+
+__global__ void forward_kernel(float *y, const float *x, const float *k, const int B, const int M, const int C, const int H, const int W, const int K) {
+>>>>>>> 887ab57d2e5b5aaf33ba8133a9b8cf8868705e24
 
     //const int H_out = H - K + 1;
     //const int W_out = W - K + 1;
     //const int MHW = 50 * H_out * W_out;
     //const int HoutWout = 576; //H_out * W_out;
 
+<<<<<<< HEAD
     #define y4d(i3,i2,i1,i0) y[(i3) * 28800 + (i2)*576 + (i1)*(24) + i0]
     __shared__ DType tileA[1250];  //[2 * TILE_WIDTH * TILE_HEIGHT];
     __shared__ DType tileB1[25 * 32];   //[TILE_WIDTH * TILE_HEIGHT];
@@ -29,6 +37,19 @@ __global__ void forward_mul_kernel(DType *y, DType *B, DType *A, const int H, co
     #define tB2d2(i1, i0) tileB2[i1 * 32 + i0]
     #define tB2d3(i1, i0) tileB3[i1 * 32 + i0]
     //#define tB2d4(i1, i0) tileB4[i1 * 16 + i0]
+=======
+    const int H_out = H - K + 1;
+    const int W_out = W - K + 1;
+    (void)H_out; // silence declared but never referenced warning. remove this line when you start working
+    (void)W_out; // silence declared but never referenced warning. remove this line when you start working
+
+    // An example use of these macros:
+    // float a = y4d(0,0,0,0)
+    // y4d(0,0,0,0) = a
+    #define y4d(i3,i2,i1,i0) y[(i3) * (M * H_out * W_out) + (i2)*(H_out * W_out) + (i1)*(W_out) + i0]
+    #define x4d(i3,i2,i1,i0) x[(i3) * (C * H * W) + (i2)*(H * W) + (i1)*(W) + i0]
+    #define k4d(i3,i2,i1,i0) k[(i3) * (C * K * K) + (i2)*(K * K) + (i1)*(K) + i0]
+>>>>>>> 887ab57d2e5b5aaf33ba8133a9b8cf8868705e24
 
     int b = blockIdx.x;  // batch index 
     int bx = blockIdx.y; // 
@@ -302,10 +323,28 @@ __global__ void unroll_kernel(DType *X_unrolled, DType *W_unrolled, const DType 
 }
 
 
+<<<<<<< HEAD
 // This function is called by new-inl.h
 // Any code you write should be executed by this function
 template<typename gpu, typename DType>
 void forward(mshadow::Tensor<gpu, 4, DType> &y, const mshadow::Tensor<gpu, 4, DType> &x, const mshadow::Tensor<gpu, 4, DType> &w) {
+=======
+
+
+/* 
+   This function is called by new-inl.h
+   Any code you write should be executed by this function.
+   For ECE408, we only expect the float version of the operator to be called, so here we specialize with only floats.
+*/
+template<>
+void forward<gpu, float>(mshadow::Tensor<gpu, 4, float> &y, const mshadow::Tensor<gpu, 4, float> &x, const mshadow::Tensor<gpu, 4, float> &w) {
+    
+
+    // Use mxnet's CHECK_EQ to do assertions.
+    // Remove this assertion when you do your implementation!
+    CHECK_EQ(0, 1) << "Missing an ECE408 GPU implementation!";
+
+>>>>>>> 887ab57d2e5b5aaf33ba8133a9b8cf8868705e24
     // You'll probably need to launch kernels against the right stream to keep MXNet happy
     cudaStream_t s1; //= y.stream_->stream_;
     cudaStream_t s2, s3, s4,s5; //
@@ -315,6 +354,7 @@ void forward(mshadow::Tensor<gpu, 4, DType> &y, const mshadow::Tensor<gpu, 4, DT
     cudaStreamCreate(&s4); cudaStreamCreate(&s5);
     
     // Extract the tensor dimensions into B,M,C,H,W,K
+<<<<<<< HEAD
     const int B = x.shape_[0];
     const int M = w.shape_[0];
     const int C = x.shape_[1];
@@ -346,6 +386,16 @@ void forward(mshadow::Tensor<gpu, 4, DType> &y, const mshadow::Tensor<gpu, 4, DT
     dim3 gridDimU(B/4, 3, 1);    // 
     dim3 gridDimU2(B/4, 1, 1);
     //cudaDeviceSynchronize();
+=======
+    // ...
+
+    // Set the kernel dimensions
+    // dim3 gridDim(0);
+    // dim3 blockDim(0);
+
+    // Call the kernel
+    // forward_kernel<<<gridDim, blockDim, 0, s>>>(y.dptr_,x.dptr_,w.dptr_, B,M,C,H,W,K);
+>>>>>>> 887ab57d2e5b5aaf33ba8133a9b8cf8868705e24
 
     dim3 blockDim(16, TILE_WIDTH, 1);  // 25, 25
     //dim3 gridDim(B, (Hout * Wout - 1) / TILE_WIDTH + 1, (M - 1) / TILE_WIDTH + 1);
@@ -386,6 +436,19 @@ void forward(mshadow::Tensor<gpu, 4, DType> &y, const mshadow::Tensor<gpu, 4, DT
     //cudaFree(W_unrolled4);
 }
 
+<<<<<<< HEAD
+=======
+
+/* 
+    This tells mxnet how to do an op when it's not a float.
+    This is not used in the ECE408 project
+*/
+template<typename gpu, typename DType>
+void forward(mshadow::Tensor<gpu, 4, DType> &y, const mshadow::Tensor<gpu, 4, DType> &x, const mshadow::Tensor<gpu, 4, DType> &w) {
+    assert( 0 && "No forward implementation for other datatypes needed for ECE408");
+}
+
+>>>>>>> 887ab57d2e5b5aaf33ba8133a9b8cf8868705e24
 }
 }
 
