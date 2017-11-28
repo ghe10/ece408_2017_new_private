@@ -10,16 +10,8 @@ resources:
   network: false
 commands:
   build:
-<<<<<<< HEAD
-    - /bin/bash -c "cp -rv /src/* /build" # copy the project folder to /build so everything appears 
+    - /bin/bash -c "cp -rv /src/* /build" # copy the project folder to /build so everything appears
     - /bin/bash -c "for src in ece408_src/*; do cp -v $src /mxnet/src/operator/custom/.; done" # cp to mxnet tr
     - nice -n20 make -C /mxnet # build mxnet
     - pip install --user -e /mxnet/python   # install python bindings
     - nvprof python m3.1.py # execute code
-=======
-    - /bin/bash -c "cp -rv /src/* /build" # copy the project folder to /build so everything appears in the upload
-    - /bin/bash -c "for src in ece408_src/*; do cp -v $src /mxnet/src/operator/custom/.; done" # copy source files to mxnet tree
-    - nice -n20 make -C /mxnet # build mxnet
-    - pip install --user -e /mxnet/python   # install python bindings
-    - python m1.1.py # execute code
->>>>>>> 887ab57d2e5b5aaf33ba8133a9b8cf8868705e24
