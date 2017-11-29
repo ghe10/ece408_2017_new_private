@@ -8,6 +8,8 @@ test 8 streams and constant memory for kernels @hgc : slow
 
 test 6 computation per thread @hgc
 
+switch to private @hgc
+
 ## Introduction
 
 This is the skeleton code for the 2017 Fall ECE408 / CS483 course project.
@@ -48,7 +50,7 @@ You may wish to stay ahead of these deadlines (particularly, allow more than two
 
 The easiest way to develop the project is to use rai through the following prebuilt binaries. You can also use the Linux machines on [EWS](http://it.engineering.illinois.edu/ews) for RAI.
 
-**NOTE:** Even if you use your own local development environment, your final code must run within the RAI system. 
+**NOTE:** Even if you use your own local development environment, your final code must run within the RAI system.
 
 ### Using RAI
 
@@ -64,7 +66,7 @@ This causes the following things to happen:
 * RAI server: uploads `/build` directory to AWS
 * RAI client: gives you the link to that build directory
 
-So, if you want any results from your run, you need to generate those results in `/build`. 
+So, if you want any results from your run, you need to generate those results in `/build`.
 The provided `rai_build.yml` moves everything to the `/build` directory in an early step.
 
 ### Final Submissions through RAI
@@ -73,7 +75,7 @@ To make an official project submission, you will run
 
     rai -p <project folder> --submit=<submission kind>
 
-The `--submit` flag accepts `m2` for milestone 2, `m3` for milestone 3, and `final` for the final submission. 
+The `--submit` flag accepts `m2` for milestone 2, `m3` for milestone 3, and `final` for the final submission.
 
     rai -p <project-folder-with-working-cpu-implementation> --submit=m2
 
@@ -165,7 +167,7 @@ You should see the following output:
     Loading model... done
     EvalMetric: {'accuracy': 0.8673}
 
-**Deliverables (to be submitted with Milestone 2)** 
+**Deliverables (to be submitted with Milestone 2)**
 In your report, confirm that this is the output you see. Use `/usr/bin/time` to measure the elapsed time of the whole python program.
 
 ### 1.2: Run the baseline GPU implementation
@@ -174,8 +176,8 @@ In your report, confirm that this is the output you see. Use `/usr/bin/time` to 
 
 To switch to a GPU run, you will need to modify rai_build.yml.
 
-| original line | replacement line | 
-| -- | -- | 
+| original line | replacement line |
+| -- | -- |
 | `image: cwpearson/2017fa_ece408_mxnet_docker:amd64-cpu-latest` | `image: cwpearson/2017fa_ece408_mxnet_docker:amd64-gpu-latest` |
 | `count: 0` | `count: 1` |
 | `python /src/m1.1.py` | `python /src/m1.2.py` |
@@ -188,7 +190,7 @@ Again, submit to rai
 
     rai -p <project-folder>
 
-**Deliverables (to be submitted with Milestone 2)** 
+**Deliverables (to be submitted with Milestone 2)**
 In your report, confirm the accuracy. Use `/usr/bin/time` to measure the elapsed time of the whole python program.
 
 ### 1.3 Generate a NVPROF Profile
@@ -215,7 +217,7 @@ You should see something that looks like the following:
      24.47%  6.9571ms        13  535.16us     480ns  5.8152ms  [CUDA memcpy HtoD]
      16.39%  4.6598ms         2  2.3299ms  92.225us  4.5676ms  void
      ... < snip > ...
-    
+
     ==308== API calls:
     Time(%)      Time     Calls       Avg       Min       Max  Name
      52.04%  4.08135s        10  408.14ms  1.1290us  1.02416s  cudaFree
@@ -230,7 +232,7 @@ There are columns corresponding to percentage of time consumed, total time, numb
 
 You can find more information about nvprof in the [CUDA Toolkit Documentation](http://docs.nvidia.com/cuda/profiler-users-guide/index.html#nvprof-overview)
 
-**Deliverables (to be submitted with Milestone 2)** 
+**Deliverables (to be submitted with Milestone 2)**
 In your report, list a table of the most time-consuming kernels.
 
 ## Milestone 2
@@ -248,7 +250,7 @@ Modify `ece408_src/new-forward.h` to implement the forward convolution described
 The performance of the CPU convolution is not part of the project evaluation.
 The algorithm is also below, for your convenience
 
-    for b = 0 .. B)                    // for each image in the batch 
+    for b = 0 .. B)                    // for each image in the batch
         for m = 0 .. M                 // for each output feature maps
             for h = 0 .. H_out         // for each output element
                 for w = 0 .. W_out
@@ -276,8 +278,8 @@ When your implementation is correct, you should see output like this:
     Time: 12.819000
     Correctness: 0.8562 Batch Size: 10000 Model: ece408-high
 
-`m2.1.py` takes two position arguments. The first is the model name, the second is the dataset size. 
-If the correctness for each possible model is as below, you can be reasonably confident your implementation is right. 
+`m2.1.py` takes two position arguments. The first is the model name, the second is the dataset size.
+If the correctness for each possible model is as below, you can be reasonably confident your implementation is right.
 The correctness does depend on the data size. Check your correctness on the full data size of 10000.
 
 For example, you could modify `rai_build.yml` to run
@@ -293,7 +295,7 @@ The provided `m2.1.py` is identical to the one used by `--submit=m2`.
 You may modify `m2.1.py` as you please, but check that `--submit=m2` will still invoke your code correctly.
 
 **Deliverables**
-Use 
+Use
 
     rai -p <project folder> --submit=m2
 
@@ -583,7 +585,7 @@ Download the trained models (for the existing mxnet implementation and your impl
 
 Modify the python forward convolution scripts to point to where you downloaded fashion-mnist
 
-    lenet_model = mx.mod.Module.load( prefix='models/baseline' ... 
+    lenet_model = mx.mod.Module.load( prefix='models/baseline' ...
 
 Modify `build.sh` to point at your mxnet code.
 
