@@ -33,7 +33,6 @@ __global__ void forward_kernel(DType *y, const DType *x, const DType *k, const i
     DType *shmem = reinterpret_cast<DType *>(my_smem);
 
     int W_numOfTiles = (W_out - 1) / TILE_WIDTH + 1;
-    //int H_numOfTiles = (H_out - 1) / TILE_WIDTH + 1;
     DType* X_shared = &shmem[0];
     DType* W_shared = &shmem[X_tile_width * X_tile_width];
     b = blockIdx.x; // batch index
@@ -60,7 +59,6 @@ __global__ void forward_kernel(DType *y, const DType *x, const DType *k, const i
         if(global_h < H && global_w < W){
         for(int p = 0; p < K; ++p){
             for(int q = 0; q < K; ++q){
-                //sum += x_shared2d(local_h + p, local_w + q) * w2d(p, q);
                 sum += x_shared2d(local_h + p, local_w + q) *
                   constant_kernel[m * (C * K * K) + c * (K * K) +  p * (K) + q];
             }
@@ -98,7 +96,6 @@ void forward(mshadow::Tensor<gpu, 4, DType> &y, const mshadow::Tensor<gpu, 4, DT
     const int K = w.shape_[2];
 
     // Set the kernel dimensions
-    // shmem_size = sizeof(DType)*((TILE_WIDTH + K - 1)*(TILE_WIDTH + K - 1) + K * K);
     int Hout = H - K + 1;
     int Wout = W - K + 1;
     int W_numOfTiles = (Wout - 1) / TILE_WIDTH + 1;
