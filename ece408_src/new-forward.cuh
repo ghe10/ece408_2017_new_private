@@ -26,7 +26,6 @@ __global__ void forward_kernel(DType *y, const DType *x, const DType *k, const i
     const int W_out = W - K + 1;
     #define y4d(i3,i2,i1,i0) y[(i3) * (M * H_out * W_out) + (i2)*(H_out * W_out) + (i1)*(W_out) + i0]
     #define x4d(i3,i2,i1,i0) x[(i3) * (C * H * W) + (i2)*(H * W) + (i1)*(W) + i0]
-    #define k4d(i3,i2,i1,i0) k[(i3) * (C * K * K) + (i2)*(K * K) + (i1)*(K) + i0]
     int X_tile_width = TILE_WIDTH + K - 1;
     int b, m, local_h, local_w, h_base, w_base, global_h, global_w;
     extern __shared__ __align__(sizeof(DType)) unsigned char my_smem[];
@@ -34,7 +33,6 @@ __global__ void forward_kernel(DType *y, const DType *x, const DType *k, const i
 
     int W_numOfTiles = (W_out - 1) / TILE_WIDTH + 1;
     DType* X_shared = &shmem[0];
-    DType* W_shared = &shmem[X_tile_width * X_tile_width];
     b = blockIdx.x; // batch index
     m = blockIdx.y; // output feature map index
     local_w = threadIdx.x;
@@ -44,7 +42,6 @@ __global__ void forward_kernel(DType *y, const DType *x, const DType *k, const i
     global_h = h_base + local_h;
     global_w = w_base + local_w;
 
-    #define w2d(i1, i0) W_shared[(i1) * K + i0]
     #define x_shared2d(i1, i0)  X_shared[(i1) * X_tile_width + i0]
     DType sum = 0;
     for(int c = 0; c < C; ++c){         // sum over all input channels
