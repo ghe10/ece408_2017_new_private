@@ -10,6 +10,8 @@ test 6 computation per thread @hgc
 
 it seems that for the new version, we must have volatile, hard to get faster than 44.9ms @hgc
 
+cuda-memcheck
+
 ## Introduction
 
 This is the skeleton code for the 2017 Fall ECE408 / CS483 course project.
