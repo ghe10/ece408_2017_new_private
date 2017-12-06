@@ -13,21 +13,21 @@ __global__ void matrix_kernel(float *y, float *x, float *w){ //gridDim B/4, 3, 1
 
     __shared__ float tileA[1250];    // 50 * 25
     __shared__ float tileB[7200];    // tile width can be selected from 32, 16, 8, 6, 3, 1
-    int b = blockIdx.x << 1;   // batch index
+    int b = blockIdx.x << 2;   // batch index
     int tx = threadIdx.x; // 
     int ty = threadIdx.y; //
     float val;
-    int index = (ty << 5) + tx, image_index = ty * 576 + tx;
+    int index = (ty << 5)*3 + tx, image_index = ty * 576 + tx;
     int i,j,topR, topC, local_w, local_h, xIndex, tileBx, tileAx, tmp; // col;
-    float sum[18] = {0};
+    float sum[15] = {0}; // 18
     float tmpB;
     //------------------------ load filters from global to shared memory -----------------------------        
-    if(ty >= 14){
-            int kIndex = ((ty - 14) << 5) + tx;
+    if(index >= 448){
+            int kIndex = index - 448;
             int tAIndex = kIndex / 25 + kIndex % 25 * 50;
             tileA[tAIndex] = w[kIndex];
             tileA[tAIndex + TILE_WIDTH] = w[kIndex + 625];
-            kIndex += 352;
+            kIndex += 512;  // 512 = 960 - 448
             if(kIndex < 625){
                 tAIndex = kIndex / 25 + kIndex % 25 * 50;
                 tileA[tAIndex] = w[kIndex];
@@ -35,16 +35,16 @@ __global__ void matrix_kernel(float *y, float *x, float *w){ //gridDim B/4, 3, 1
             }
     }else{
     //------------------------ load data from global to shared memory ----------------------------
-            local_w = index % 28;// + blockOffset; //8 * bx;
-            local_h = index / 28;// + bx * 12;
-            xIndex = b * 784 + local_h * 28 + local_w;
+            local_w = index % 28;// 
+            local_h = index / 28;//
+            xIndex = b * 784 + index;//local_h * 28 + local_w;
             val = x[xIndex];
         for(i = 0; i < 5; ++i){
             for(j = 0; j < 5; ++j){
                     topC = local_w - j;
                     topR = local_h - i;
                     if(0 <= topR && topR < 12  && 0 <= topC && topC < 24){
-                            tileB[(i * 5 + j) * 288 + topR * 24 + topC] = val;
+                         tileB[(i * 5 + j) * 288 + topR * 24 + topC] = val;
                     }
             }
         }
@@ -52,33 +52,33 @@ __global__ void matrix_kernel(float *y, float *x, float *w){ //gridDim B/4, 3, 1
     __syncthreads();
     
     //----------------------------------- compute ------------------------------------
-    if(ty < 25){
-    for(i = 0; i < 9; ++i){
+    for(i = 0; i < 3; ++i){
         for( j = 0; j < TILE_WIDTH; ++j){
             tileAx = j * 50 + ty;
-            tileBx = (i << 5) + tx;
+            tileBx = (i << 5) * 3 + tx;
             tmpB = tileB[tileBx + j * 288]; // 25 * 8
             sum[i] += tileA[tileAx] * tmpB;                   //tmpA1 * tmpB;
-            sum[i + 9] += tileA[tileAx + 25] * tmpB; //tmpA2 * tmpB;
+            sum[i + 3] += tileA[tileAx + 10] * tmpB; //tmpA2 * tmpB;
+            sum[i + 6] += tileA[tileAx + 20] * tmpB;
+            sum[i + 9] += tileA[tileAx + 30] * tmpB;
+            sum[i + 12] += tileA[tileAx + 40] * tmpB;
         }
-    }
     }
     //---------------------------- write to global memory ----------------------------
-        //col = tx; // 288 = 12 *24 ,   row = ty;
         tmp = b * 28800 + image_index;
-        
-        for(i = 0; i < 9; ++i){
-            y[tmp + (i<<5)] = sum[i]; // 3 * 8
+        for(i = 0; i < 15; i += 3){
+        //y[tmp + (i / 3)*5760 + (i%3)*96] = sum[i];
+         y[tmp ] = sum[i];
+            y[tmp + 96] = sum[i + 1];
+            y[tmp + 192] = sum[i + 2];
+            tmp += 5760;
+
         }
-        tmp += 14400;   // 14400 = 25 * (24 * 24)
-        for(i = 0; i < 9; ++i){
-            y[tmp + (i<<5)] = sum[i + 9]; // 3 * 8
-        }
-   __syncthreads(); 
+        __syncthreads(); 
  //---------------------------------- test below ---------------------------------- 
-    if(ty < 14){   
-        val = x[xIndex + 12*28];
-        for(i = 0; i < 5; ++i){
+    if(index < 448){   
+       val = x[xIndex + 12*28];
+       for(i = 0; i < 5; ++i){
             for(j = 0; j < 5; ++j){
                     topC = local_w - j;
                     topR = local_h + 12 - i;
@@ -86,35 +86,34 @@ __global__ void matrix_kernel(float *y, float *x, float *w){ //gridDim B/4, 3, 1
                             tileB[(i * 5 + j) * 288 + (topR - 12) * 24 + topC] = val;
                     }
             }
+       }
+    }
+    __syncthreads();
+    memset(sum, 0, 60); // 60 = 4 * 15
+    for(i = 0; i < 3; ++i){
+        for( j = 0; j < TILE_WIDTH; ++j){
+            tileAx = j * 50 + ty;
+            tileBx = (i << 5) * 3 + tx;
+            tmpB = tileB[tileBx + j * 288]; // 25 * 8
+            sum[i] += tileA[tileAx] * tmpB;                   //tmpA1 * tmpB;
+            sum[i + 3] += tileA[tileAx + 10] * tmpB; //tmpA2 * tmpB;
+            sum[i + 6] += tileA[tileAx + 20] * tmpB;
+            sum[i + 9] += tileA[tileAx + 30] * tmpB;
+            sum[i + 12] += tileA[tileAx + 40] * tmpB;
         }
     }
-        __syncthreads();
-       memset(sum, 0, 72);
-       for(i = 0; i < 9; ++i){
-            for(j = 0; j < TILE_WIDTH; ++j){
-                tileAx = j * 50 + ty;
-                tileBx = (i << 5) + tx;
-                tmpB = tileB[tileBx + j * 288];
-                sum[i] += tileA[tileAx] * tmpB;
-                sum[i + 9] += tileA[tileAx + 25] * tmpB; 
-            }
-        }
-
     //---------------------------- write to global memory ----------------------------
-        //col = 288 + tx; // 288 = 12 *24 ,   row = ty;
-        
         tmp = b * 28800 + image_index + 288;
-        for(i = 0; i < 9; ++i){
-            y[tmp + (i<<5)] = sum[i];
+        for(i = 0; i < 15; i += 3){
+            y[tmp ] = sum[i];
+            y[tmp + 96] = sum[i + 1];
+            y[tmp + 192] = sum[i + 2];
+            tmp += 5760;
         }
-        tmp += 14400;   // 14400 = 25 * (24 * 24)
-        for(i = 0; i < 9; ++i){
-            y[tmp + (i<<5)] = sum[i + 9];
-        }
-     __syncthreads();
-    // --------------------------  another batch ------------------------
+        __syncthreads();
+    // --------------------------  second batch ------------------------
       b += 1;
-     if(ty < 14){
+     if(index < 448){
         val = x[xIndex + 784];
          for(i = 0; i < 5; ++i){
             for(j = 0; j < 5; ++j){
@@ -125,31 +124,30 @@ __global__ void matrix_kernel(float *y, float *x, float *w){ //gridDim B/4, 3, 1
                     }
             }
         }
-
      }
-        __syncthreads();
-       memset(sum, 0, 72);
-       for(i = 0; i < 9; ++i){
-            for(j = 0; j < TILE_WIDTH; ++j){
-                tileAx = j * 50 + ty;
-                tileBx = (i << 5) + tx;
-                tmpB = tileB[tileBx + j * 288]; // 25 * 8
-                sum[i] += tileA[tileAx] * tmpB;                   //tmpA1 * tmpB;
-                sum[i + 9] += tileA[tileAx + 25] * tmpB; //tmpA2 * tmpB;
-            }
+     __syncthreads();
+     memset(sum, 0, 60);
+     for(i = 0; i < 3; ++i){
+        for( j = 0; j < TILE_WIDTH; ++j){
+            tileAx = j * 50 + ty;
+            tileBx = (i << 5) * 3 + tx;
+            tmpB = tileB[tileBx + j * 288]; // 25 * 8
+            sum[i] += tileA[tileAx] * tmpB;                   //tmpA1 * tmpB;
+            sum[i + 3] += tileA[tileAx + 10] * tmpB; //tmpA2 * tmpB;
+            sum[i + 6] += tileA[tileAx + 20] * tmpB;
+            sum[i + 9] += tileA[tileAx + 30] * tmpB;
+            sum[i + 12] += tileA[tileAx + 40] * tmpB;
         }
-        
+     }
         tmp = b * 28800 + image_index; //col;
-        for(i = 0; i < 9; ++i){
-            y[tmp + (i<<5)] = sum[i]; // 3 * 8
+        for(i = 0; i < 15; i += 3){
+            y[tmp ] = sum[i];
+            y[tmp + 96] = sum[i + 1];
+            y[tmp + 192] = sum[i + 2];
+            tmp += 5760;
         }
-        tmp += 14400;   // 14400 = 25 * (24 * 24)
-        for(i = 0; i < 9; ++i){
-            y[tmp + (i<<5)] = sum[i + 9]; // 3 * 8
-        }
-        __syncthreads();
-
-     if(ty < 14){
+     __syncthreads();
+     if(index < 448){
         val = x[xIndex + 784 + 12*28];
          for(i = 0; i < 5; ++i){
             for(j = 0; j < 5; ++j){
@@ -160,46 +158,178 @@ __global__ void matrix_kernel(float *y, float *x, float *w){ //gridDim B/4, 3, 1
                     }
             }
         }
-
      }
      __syncthreads();
-       memset(sum, 0, 72);
-       for(i = 0; i < 9; ++i){
-            for(j = 0; j < TILE_WIDTH; ++j){
-                tileAx = j * 50 + ty;
-                tileBx = (i << 5) + tx;
-                tmpB = tileB[tileBx + j * 288]; // 25 * 8
-                sum[i] += tileA[tileAx] * tmpB;                   //tmpA1 * tmpB;
-                sum[i + 9] += tileA[tileAx + 25] * tmpB; //tmpA2 * tmpB;
+     memset(sum, 0, 60);
+     for(i = 0; i < 3; ++i){
+        for( j = 0; j < TILE_WIDTH; ++j){
+            tileAx = j * 50 + ty;
+            tileBx = (i << 5) * 3 + tx;
+            tmpB = tileB[tileBx + j * 288]; // 25 * 8
+            sum[i] += tileA[tileAx] * tmpB;                   //tmpA1 * tmpB;
+            sum[i + 3] += tileA[tileAx + 10] * tmpB; //tmpA2 * tmpB;
+            sum[i + 6] += tileA[tileAx + 20] * tmpB;
+            sum[i + 9] += tileA[tileAx + 30] * tmpB;
+            sum[i + 12] += tileA[tileAx + 40] * tmpB;
+        }
+     }
+     tmp = b * 28800 + image_index + 288; //col;
+     for(i = 0; i < 15; i += 3){
+             y[tmp ] = sum[i];
+            y[tmp + 96] = sum[i + 1];
+            y[tmp + 192] = sum[i + 2];
+            tmp += 5760;
+     } 
+     __syncthreads();
+   // ----------------------------  third batch -------------------------
+     b += 1;
+     if(index < 448){
+        val = x[xIndex + 1568];
+         for(i = 0; i < 5; ++i){
+            for(j = 0; j < 5; ++j){
+                    topC = local_w - j;
+                    topR = local_h - i;
+                    if(0 <= topR && topR < 12  && 0 <= topC && topC < 24){
+                            tileB[(i * 5 + j) * 288 + (topR) * 24 + topC] = val;
+                    }
             }
         }
-        tmp = b * 28800 + image_index + 288; //col;
-        for(i = 0; i < 9; ++i){
-            y[tmp + (i<<5)] = sum[i]; // 3 * 8
+     }
+     __syncthreads();
+     memset(sum, 0, 60);
+     for(i = 0; i < 3; ++i){
+        for( j = 0; j < TILE_WIDTH; ++j){
+            tileAx = j * 50 + ty;
+            tileBx = (i << 5) * 3 + tx;
+            tmpB = tileB[tileBx + j * 288]; // 25 * 8
+            sum[i] += tileA[tileAx] * tmpB;                   //tmpA1 * tmpB;
+            sum[i + 3] += tileA[tileAx + 10] * tmpB; //tmpA2 * tmpB;
+            sum[i + 6] += tileA[tileAx + 20] * tmpB;
+            sum[i + 9] += tileA[tileAx + 30] * tmpB;
+            sum[i + 12] += tileA[tileAx + 40] * tmpB;
         }
-        tmp += 14400;   // 14400 = 25 * (24 * 24)
-        for(i = 0; i < 9; ++i){
-            y[tmp + (i<<5)] = sum[i + 9]; // 3 * 8
+     }
+        tmp = b * 28800 + image_index; //col;
+        for(i = 0; i < 15; i += 3){
+            y[tmp ] = sum[i];
+            y[tmp + 96] = sum[i + 1];
+            y[tmp + 192] = sum[i + 2];
+            tmp += 5760;
         }
-
-
+     __syncthreads();
+     if(index < 448){
+        val = x[xIndex + 784*2 + 12*28];
+         for(i = 0; i < 5; ++i){
+            for(j = 0; j < 5; ++j){
+                    topC = local_w - j;
+                    topR = local_h + 12 - i;
+                    if(12 <= topR && topR < 24  && 0 <= topC && topC < 24){
+                            tileB[(i * 5 + j) * 288 + (topR - 12) * 24 + topC] = val;
+                    }
+            }
+        }
+     }
+     __syncthreads();
+     memset(sum, 0, 60);
+     for(i = 0; i < 3; ++i){
+        for( j = 0; j < TILE_WIDTH; ++j){
+            tileAx = j * 50 + ty;
+            tileBx = (i << 5) * 3 + tx;
+            tmpB = tileB[tileBx + j * 288]; // 25 * 8
+            sum[i] += tileA[tileAx] * tmpB;                   //tmpA1 * tmpB;
+            sum[i + 3] += tileA[tileAx + 10] * tmpB; //tmpA2 * tmpB;
+            sum[i + 6] += tileA[tileAx + 20] * tmpB;
+            sum[i + 9] += tileA[tileAx + 30] * tmpB;
+            sum[i + 12] += tileA[tileAx + 40] * tmpB;
+        }
+     }
+     tmp = b * 28800 + image_index + 288; //col;
+     for(i = 0; i < 15; i += 3){
+             y[tmp ] = sum[i];
+            y[tmp + 96] = sum[i + 1];
+            y[tmp + 192] = sum[i + 2];
+            tmp += 5760;
+     }
+     __syncthreads();
+// -----------------------------  fourth batch -----------------------
+     b += 1;
+     if(index < 448){
+        val = x[xIndex + 784*3];
+         for(i = 0; i < 5; ++i){
+            for(j = 0; j < 5; ++j){
+                    topC = local_w - j;
+                    topR = local_h - i;
+                    if(0 <= topR && topR < 12  && 0 <= topC && topC < 24){
+                            tileB[(i * 5 + j) * 288 + (topR) * 24 + topC] = val;
+                    }
+            }
+        }
+     }
+     __syncthreads();
+     memset(sum, 0, 60);
+     for(i = 0; i < 3; ++i){
+        for( j = 0; j < TILE_WIDTH; ++j){
+            tileAx = j * 50 + ty;
+            tileBx = (i << 5) * 3 + tx;
+            tmpB = tileB[tileBx + j * 288]; // 25 * 8
+            sum[i] += tileA[tileAx] * tmpB;                   //tmpA1 * tmpB;
+            sum[i + 3] += tileA[tileAx + 10] * tmpB; //tmpA2 * tmpB;
+            sum[i + 6] += tileA[tileAx + 20] * tmpB;
+            sum[i + 9] += tileA[tileAx + 30] * tmpB;
+            sum[i + 12] += tileA[tileAx + 40] * tmpB;
+        }
+     }
+        tmp = b * 28800 + image_index; //col;
+        for(i = 0; i < 15; i += 3){
+            y[tmp ] = sum[i];
+            y[tmp + 96] = sum[i + 1];
+            y[tmp + 192] = sum[i + 2];
+            tmp += 5760;
+        }
+     __syncthreads();
+     if(index < 448){
+        val = x[xIndex + 784*3 + 12*28];
+         for(i = 0; i < 5; ++i){
+            for(j = 0; j < 5; ++j){
+                    topC = local_w - j;
+                    topR = local_h + 12 - i;
+                    if(12 <= topR && topR < 24  && 0 <= topC && topC < 24){
+                            tileB[(i * 5 + j) * 288 + (topR - 12) * 24 + topC] = val;
+                    }
+            }
+        }
+     }
+     __syncthreads();
+     memset(sum, 0, 60);
+     for(i = 0; i < 3; ++i){
+        for( j = 0; j < TILE_WIDTH; ++j){
+            tileAx = j * 50 + ty;
+            tileBx = (i << 5) * 3 + tx;
+            tmpB = tileB[tileBx + j * 288]; // 25 * 8
+            sum[i] += tileA[tileAx] * tmpB;                   //tmpA1 * tmpB;
+            sum[i + 3] += tileA[tileAx + 10] * tmpB; //tmpA2 * tmpB;
+            sum[i + 6] += tileA[tileAx + 20] * tmpB;
+            sum[i + 9] += tileA[tileAx + 30] * tmpB;
+            sum[i + 12] += tileA[tileAx + 40] * tmpB;
+        }
+     }
+     tmp = b * 28800 + image_index + 288; //col;
+     for(i = 0; i < 15; i += 3){
+             y[tmp ] = sum[i];
+            y[tmp + 96] = sum[i + 1];
+            y[tmp + 192] = sum[i + 2];
+            tmp += 5760;
+     } 
 }
 
 // This function is called by new-inl.h
 // Any code you write should be executed by this function
 template<>
 void forward<gpu, float>(mshadow::Tensor<gpu, 4, float> &y, const mshadow::Tensor<gpu, 4, float> &x, const mshadow::Tensor<gpu, 4, float> &w) {
-    // You'll probably need to launch kernels against the right stream to keep MXNet happy
-    const int B = x.shape_[0];
-    //printf("size of float = %d, B = %d \n", sizeof(float), B);
-    //cudaStream_t s1, s2;// s3, s4; //s5;//, s6, s7, s8, s9, s10; //= y.stream_->stream_;
-    // Extract the tensor dimensions into B,M,C,H,W,K
-    dim3 blockDim(32, 32, 1);  // 25, 25
-    //dim3 gridDim(B, (Hout * Wout - 1) / TILE_WIDTH + 1, (M - 1) / TILE_WIDTH + 1);
-    //dim3 gridDim(300, 1, 1);
-    dim3 gridDim1(B >> 1, 1, 1);
-    matrix_kernel<<<gridDim1, blockDim>>>(y.dptr_, x.dptr_, w.dptr_); 
-    // Use MSHADOW_CUDA_CALL to check for CUDA runtime errors.
+    const int B = x.shape_[0] >> 2;
+    dim3 blockDim(96, 10, 1);  // 25, 25
+    dim3 gridDim(B, 1, 1);
+    matrix_kernel<<<gridDim, blockDim>>>(y.dptr_, x.dptr_, w.dptr_); 
     MSHADOW_CUDA_CALL(cudaDeviceSynchronize());
 }
 
