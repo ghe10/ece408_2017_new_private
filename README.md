@@ -8,6 +8,12 @@ test 8 streams and constant memory for kernels @hgc : slow
 
 test 6 computation per thread @hgc
 
+https://stackoverflow.com/questions/17446448/automatic-loop-unrolling-by-the-nvidia-cuda-compiler
+https://devtalk.nvidia.com/default/topic/466758/tricks-to-fight-register-pressure-or-how-i-got-down-from-29-to-15-registers-/
+https://devtalk.nvidia.com/default/topic/466970/how-to-reduce-register-usage/
+https://devblogs.nvidia.com/parallelforall/new-compiler-features-cuda-8/
+https://devtalk.nvidia.com/default/topic/852715/understanding-unrolling-and-concurrent-memory-operations/?offset=1
+
 ## Introduction
 
 This is the skeleton code for the 2017 Fall ECE408 / CS483 course project.
