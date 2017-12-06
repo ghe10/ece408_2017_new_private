@@ -9,7 +9,7 @@ namespace mxnet
 namespace op
 {
 
-__global__ void matrix_kernel(float *y, float *x, float *w){ //gridDim B/4, 3, 1,  blockDim 25 * 32
+__global__ void matrix_kernel(float *y, float *x, float *w){ //gridDim B/4, 1, 1,  blockDim 10 * 96
 
     __shared__ float tileA[1250];    // 50 * 25
     __shared__ float tileB[7200];    // tile width can be selected from 32, 16, 8, 6, 3, 1
@@ -67,8 +67,7 @@ __global__ void matrix_kernel(float *y, float *x, float *w){ //gridDim B/4, 3, 1
     //---------------------------- write to global memory ----------------------------
         tmp = b * 28800 + image_index;
         for(i = 0; i < 15; i += 3){
-        //y[tmp + (i / 3)*5760 + (i%3)*96] = sum[i];
-         y[tmp ] = sum[i];
+            y[tmp] = sum[i];
             y[tmp + 96] = sum[i + 1];
             y[tmp + 192] = sum[i + 2];
             tmp += 5760;
@@ -77,7 +76,7 @@ __global__ void matrix_kernel(float *y, float *x, float *w){ //gridDim B/4, 3, 1
         __syncthreads(); 
  //---------------------------------- test below ---------------------------------- 
     if(index < 448){   
-       val = x[xIndex + 12*28];
+       val = x[xIndex + 336];//12*28
        for(i = 0; i < 5; ++i){
             for(j = 0; j < 5; ++j){
                     topC = local_w - j;
@@ -105,7 +104,7 @@ __global__ void matrix_kernel(float *y, float *x, float *w){ //gridDim B/4, 3, 1
     //---------------------------- write to global memory ----------------------------
         tmp = b * 28800 + image_index + 288;
         for(i = 0; i < 15; i += 3){
-            y[tmp ] = sum[i];
+            y[tmp] = sum[i];
             y[tmp + 96] = sum[i + 1];
             y[tmp + 192] = sum[i + 2];
             tmp += 5760;
@@ -148,7 +147,7 @@ __global__ void matrix_kernel(float *y, float *x, float *w){ //gridDim B/4, 3, 1
         }
      __syncthreads();
      if(index < 448){
-        val = x[xIndex + 784 + 12*28];
+        val = x[xIndex + 1120]; // 784 + 12*28
          for(i = 0; i < 5; ++i){
             for(j = 0; j < 5; ++j){
                     topC = local_w - j;
@@ -218,7 +217,7 @@ __global__ void matrix_kernel(float *y, float *x, float *w){ //gridDim B/4, 3, 1
         }
      __syncthreads();
      if(index < 448){
-        val = x[xIndex + 784*2 + 12*28];
+        val = x[xIndex + 1904];//784*2 + 12*28
          for(i = 0; i < 5; ++i){
             for(j = 0; j < 5; ++j){
                     topC = local_w - j;
@@ -254,7 +253,7 @@ __global__ void matrix_kernel(float *y, float *x, float *w){ //gridDim B/4, 3, 1
 // -----------------------------  fourth batch -----------------------
      b += 1;
      if(index < 448){
-        val = x[xIndex + 784*3];
+        val = x[xIndex + 2352]; // 784 * 3
          for(i = 0; i < 5; ++i){
             for(j = 0; j < 5; ++j){
                     topC = local_w - j;
@@ -288,7 +287,7 @@ __global__ void matrix_kernel(float *y, float *x, float *w){ //gridDim B/4, 3, 1
         }
      __syncthreads();
      if(index < 448){
-        val = x[xIndex + 784*3 + 12*28];
+        val = x[xIndex + 2688]; //784*3+12*28
          for(i = 0; i < 5; ++i){
             for(j = 0; j < 5; ++j){
                     topC = local_w - j;
@@ -315,7 +314,7 @@ __global__ void matrix_kernel(float *y, float *x, float *w){ //gridDim B/4, 3, 1
      }
      tmp = b * 28800 + image_index + 288; //col;
      for(i = 0; i < 15; i += 3){
-             y[tmp ] = sum[i];
+            y[tmp ] = sum[i];
             y[tmp + 96] = sum[i + 1];
             y[tmp + 192] = sum[i + 2];
             tmp += 5760;
