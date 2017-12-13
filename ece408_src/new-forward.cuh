@@ -38,14 +38,14 @@ __global__ void forward_kernel(DType *y, const DType *x, const DType *k, const i
     // load 28 * 28 input
     for (int index = 0; index < PIC_PER_BLOCK; index++) {
       x_shared[index * input_size + local_h * 28 + local_w] = x[read_base];
-      read_base += B / PIC_PER_BLOCK * input_size; // each loaded data got a jump for 1250 pics
+      read_base += input_size; // each block load adjacent 10 images
     }
     __syncthreads();
 
     // compute
 
     if (local_h < 24 && local_w < 24) {
-      write_base = block_num * 50 * output_size;
+      write_base = block_num * PIC_PER_BLOCK * 50 * output_size + local_h * 24 + local_w;
       for (int index = 0; index < PIC_PER_BLOCK; index++) {
         #pragma unroll 1
         for (int kernel_index = 0; kernel_index < 50; kernel_index++) {
@@ -60,9 +60,9 @@ __global__ void forward_kernel(DType *y, const DType *x, const DType *k, const i
           // write_base = (block_num) * PIC_PER_BLOCK * 50 * output_size +
           //   index * (B / PIC_PER_BLOCK) * 50 * output_size
           //   + kernel_index * output_size + local_h * 24 + local_w;
-          y[write_base + kernel_index * output_size + local_h * 24 + local_w] = sum; // this should be kernel related
+          y[write_base + kernel_index * output_size] = sum; // this should be kernel related
         }
-        write_base += B / PIC_PER_BLOCK * 50 * output_size;
+        write_base += 50 * output_size;
       }
     }
 }
