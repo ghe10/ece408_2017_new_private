@@ -80,7 +80,7 @@ void forward(mshadow::Tensor<gpu, 4, DType> &y, const mshadow::Tensor<gpu, 4, DT
     // CHECK_EQ(0, 1) << "Starting a GPU implementation based on share memory!";
 
     // You'll probably need to launch kernels against the right stream to keep MXNet happy
-    cudaStream_t s = y.stream_->stream_;
+    //cudaStream_t s = y.stream_->stream_;
 
     // Extract the tensor dimensions into B,M,C,H,W,K
     const int B = x.shape_[0]; // input batch
@@ -101,7 +101,7 @@ void forward(mshadow::Tensor<gpu, 4, DType> &y, const mshadow::Tensor<gpu, 4, DT
     // allocate constant_kernel
     cudaMemcpyToSymbol(constant_kernel, w.dptr_, sizeof(float) * 50 * 25, 0, cudaMemcpyDeviceToDevice);
     // Call the kernel                                0 is sharemem s is stream
-    forward_kernel<gpu, DType><<<gridDim, blockDim, PIC_PER_BLOCK * sizeof(DType) * H * W, s>>>(y.dptr_,x.dptr_,w.dptr_, B, M, C, H, W, K);
+    forward_kernel<gpu, DType><<<gridDim, blockDim, PIC_PER_BLOCK * sizeof(DType) * H * W>>>(y.dptr_,x.dptr_,w.dptr_, B, M, C, H, W, K);
 
     // Use MSHADOW_CUDA_CALL to check for CUDA runtime errors.
     MSHADOW_CUDA_CALL(cudaDeviceSynchronize());
