@@ -5,7 +5,7 @@
 #include <mxnet/base.h>
 
 #define TILE_WIDTH 28
-#define PIC_PER_BLOCK 10
+#define PIC_PER_BLOCK 12
 
 namespace mxnet
 {
@@ -18,32 +18,30 @@ __global__ void forward_kernel(float *y, const float *x, const float *k) {
     /*
       A few constants are used in this kernel to reduce computation
     */
-    __shared__ float x_shared[7840];
-    int block_num = blockIdx.x << 1;
+    __shared__ float x_shared[10192];
+    int block_num = blockIdx.x;
     int local_h = threadIdx.y;
     int local_w = threadIdx.x;
     int local_index = (local_h << 2)*7 + local_w;
-    int read_base = (block_num << 5)*245 + local_index;
-    int write_base;
+    int read_base = (block_num << 4)*1225 + local_index;// block_num * 784 * 25
+    int write_base = (block_num << 7) * 5625;
     float sum;
-
     // load 28 * 28 input
-    for (int index = 0; index < PIC_PER_BLOCK; index++) {
+    for (int index = 0; index < 13; index++) {
       x_shared[(index<<4)*49 + local_index] = x[read_base + (index<<4)*49];
     }
     __syncthreads();
 
     // compute the convolution result
-
-    if (local_index < 576) {
-      write_base = (block_num << 8) * 1125 + local_index;
-      for (int index = 0; index < PIC_PER_BLOCK; index++) {
-        #pragma unroll 14
+    if(local_index < 576){
+      write_base += local_index;
+      for (int index = 0; index < 13; index++) {
+        #pragma unroll 15
         for (int kernel_index = 0; kernel_index < 50; kernel_index++) {
           sum = 0;
           for (int i = 0; i < 5; i++) {
             for (int j = 0; j < 5; j++) {
-                sum += x_shared[(index<<4)*49 + (local_index/24 + i) * 28 + local_index%24 + j] *
+                sum += x_shared[(index<<4)*49 + ((local_index/24 + i) << 2)*7 + local_index%24 + j] *
                   kernel[kernel_index * 25 + i * 5 + j];
               }
           }
@@ -54,9 +52,61 @@ __global__ void forward_kernel(float *y, const float *x, const float *k) {
     __syncthreads();
 
     // ------------------- second batch --------------------------
-    read_base += 7840;
-    write_base += 288000;
-    for (int index = 0; index < PIC_PER_BLOCK; index++) {
+    read_base += 10192; //7840;
+    write_base += 374400; //288000;
+    for (int index = 0; index < 12; index++) {
+      x_shared[(index<<4)*49 + local_index] = x[read_base + (index<<4)*49];
+    }
+    __syncthreads();
+
+    // compute the convolution result
+    if(local_index < 576){
+      for (int index = 0; index < 12; index++) {
+        #pragma unroll 15
+        for (int kernel_index = 0; kernel_index < 50; kernel_index++) {
+          sum = 0;
+          for (int i = 0; i < 5; i++) {
+            for (int j = 0; j < 5; j++) {
+                sum += x_shared[(index<<4)*49 + ((local_index/24 + i)<<2)*7 + local_index%24 + j] *
+                  kernel[kernel_index * 25 + i * 5 + j];
+              }
+          }
+          y[write_base + (index<<7)*225 + (kernel_index<<6)*9] = sum;
+        }
+      }
+    }
+    /*
+    else{ // remain threads = 784 - 576 = 208
+        int align_index = local_index - 576;
+        #pragma unroll 14
+        for(int kernel_index = 0; kernel_index < 50; ++kernel_index){
+                    sum = 0;
+                    for(int i = 0; i < 5; ++i){
+                        for(int j = 0; j < 5; ++j){
+                            sum += x_shared[9408 + 336 + (align_index/24 + i)*28 + align_index%24 + j] * kernel[kernel_index*25 + i * 5 + j];
+                        }
+                    }
+                    y[write_base2 + (align_index + 288) + (kernel_index<<6)*9] = sum;
+        }
+        align_index += 208;
+            if(align_index < 288){
+                #pragma unroll 14
+                for(int kernel_index = 0; kernel_index < 50; ++kernel_index){
+                    sum = 0;
+                    for(int i = 0; i < 5; ++i){
+                        for(int j = 0; j < 5; ++j){
+                            sum += x_shared[9408 + 336 + (align_index/24 + i)*28 + align_index%24 + j] * kernel[kernel_index*25 + i * 5 + j];
+                        }
+                    }
+                    y[write_base2 + (align_index + 288) + (kernel_index<<6)*9] = sum;
+                }
+            }
+    }
+    __syncthreads();
+    // -----------------  third batch ---------------------
+    read_base += 10976;
+    write_base += 403200;
+    for (int index = 0; index < 12; index++) {
       x_shared[(index<<4)*49 + local_index] = x[read_base + (index<<4)*49];
     }
     __syncthreads();
@@ -64,8 +114,8 @@ __global__ void forward_kernel(float *y, const float *x, const float *k) {
     // compute the convolution result
 
     if (local_index < 576) {
-      for (int index = 0; index < PIC_PER_BLOCK; index++) {
-        #pragma unroll 14
+      for (int index = 0; index < 12; index++) {
+        #pragma unroll 16
         for (int kernel_index = 0; kernel_index < 50; kernel_index++) {
           sum = 0;
           for (int i = 0; i < 5; i++) {
@@ -78,32 +128,7 @@ __global__ void forward_kernel(float *y, const float *x, const float *k) {
         }
       }
     }
-    //__syncthreads();
-    // -----------------  third batch ---------------------
-/*    read_base += 7840;
-    write_base += 288000;
-    for (int index = 0; index < PIC_PER_BLOCK; index++) {
-      x_shared[index * 784 + local_index] = x[read_base + index * 784];
-    }
-    __syncthreads();
-
-    // compute the convolution result
-
-    if (local_index < 576) {
-      for (int index = 0; index < PIC_PER_BLOCK; index++) {
-        #pragma unroll 15
-        for (int kernel_index = 0; kernel_index < 50; kernel_index++) {
-          sum = 0;
-          for (int i = 0; i < 5; i++) {
-            for (int j = 0; j < 5; j++) {
-                sum += x_shared[index*784 + (local_index/24 + i) * 28 + local_index%24 + j] *
-                  kernel[kernel_index * 25 + i * 5 + j];
-              }
-          }
-          y[write_base + index * 28800 + kernel_index * 576] = sum;
-        }
-      }
-    }
+    
     __syncthreads();
     // -----------------  fourth batch -----------------------
     read_base += 7840;
@@ -140,7 +165,7 @@ __global__ void forward_kernel(float *y, const float *x, const float *k) {
 // Any code you write should be executed by this function
 template<>
 void forward<gpu, float>(mshadow::Tensor<gpu, 4, float> &y, const mshadow::Tensor<gpu, 4, float> &x, const mshadow::Tensor<gpu, 4, float> &w) {
-    const int B = x.shape_[0] / 20; // input batch
+    const int B = x.shape_[0] / 25; // input batch
 
     dim3 blockDim(TILE_WIDTH, TILE_WIDTH, 1);
     dim3 gridDim(B, 1, 1);
