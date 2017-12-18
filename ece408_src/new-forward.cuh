@@ -22,18 +22,20 @@ __global__ void forward_kernel(float *y, const float *x, const float *k) {
     int block_num = blockIdx.x;
     int local_h = threadIdx.y;
     int local_w = threadIdx.x;
-    int local_index = (local_h << 2)*7 + local_w;
-    int read_base = (block_num << 4)*1225 + local_index;// block_num * 784 * 25
+    int local_index = (local_h << 5) + local_w;
+    int read_base = (block_num << 4)*1225;//
     int write_base = (block_num << 7) * 5625;
     float sum;
     // load 28 * 28 input
-    for (int index = 0; index < 13; index++) {
-      x_shared[(index<<4)*49 + local_index] = x[read_base + (index<<4)*49];
+    for (int index = 0; index < 17; index++) {
+      x_shared[(index<<6)*9 + local_index] = x[read_base + (index<<6)*9 + local_index];
+    }
+    if(local_index < 400){
+        x_shared[9792 + local_index] = x[read_base + 9792 + local_index];
     }
     __syncthreads();
 
     // compute the convolution result
-    if(local_index < 576){
       write_base += local_index;
       for (int index = 0; index < 13; index++) {
         #pragma unroll 15
@@ -48,19 +50,18 @@ __global__ void forward_kernel(float *y, const float *x, const float *k) {
           y[write_base + (index << 7)*225 + (kernel_index << 6)*9] = sum;
         }
       }
-    }
     __syncthreads();
 
     // ------------------- second batch --------------------------
     read_base += 10192; //7840;
     write_base += 374400; //288000;
-    for (int index = 0; index < 12; index++) {
-      x_shared[(index<<4)*49 + local_index] = x[read_base + (index<<4)*49];
+    for (int index = 0; index < 16; index++) {
+      x_shared[(index<<6)*9 + local_index] = x[read_base + (index<<6)*9 + local_index];
     }
+    if(local_index < 192) x_shared[9216 + local_index] = x[read_base + 9216 + local_index];
     __syncthreads();
 
     // compute the convolution result
-    if(local_index < 576){
       for (int index = 0; index < 12; index++) {
         #pragma unroll 15
         for (int kernel_index = 0; kernel_index < 50; kernel_index++) {
@@ -74,34 +75,7 @@ __global__ void forward_kernel(float *y, const float *x, const float *k) {
           y[write_base + (index<<7)*225 + (kernel_index<<6)*9] = sum;
         }
       }
-    }
     /*
-    else{ // remain threads = 784 - 576 = 208
-        int align_index = local_index - 576;
-        #pragma unroll 14
-        for(int kernel_index = 0; kernel_index < 50; ++kernel_index){
-                    sum = 0;
-                    for(int i = 0; i < 5; ++i){
-                        for(int j = 0; j < 5; ++j){
-                            sum += x_shared[9408 + 336 + (align_index/24 + i)*28 + align_index%24 + j] * kernel[kernel_index*25 + i * 5 + j];
-                        }
-                    }
-                    y[write_base2 + (align_index + 288) + (kernel_index<<6)*9] = sum;
-        }
-        align_index += 208;
-            if(align_index < 288){
-                #pragma unroll 14
-                for(int kernel_index = 0; kernel_index < 50; ++kernel_index){
-                    sum = 0;
-                    for(int i = 0; i < 5; ++i){
-                        for(int j = 0; j < 5; ++j){
-                            sum += x_shared[9408 + 336 + (align_index/24 + i)*28 + align_index%24 + j] * kernel[kernel_index*25 + i * 5 + j];
-                        }
-                    }
-                    y[write_base2 + (align_index + 288) + (kernel_index<<6)*9] = sum;
-                }
-            }
-    }
     __syncthreads();
     // -----------------  third batch ---------------------
     read_base += 10976;
@@ -167,7 +141,8 @@ template<>
 void forward<gpu, float>(mshadow::Tensor<gpu, 4, float> &y, const mshadow::Tensor<gpu, 4, float> &x, const mshadow::Tensor<gpu, 4, float> &w) {
     const int B = x.shape_[0] / 25; // input batch
 
-    dim3 blockDim(TILE_WIDTH, TILE_WIDTH, 1);
+    //dim3 blockDim(TILE_WIDTH, TILE_WIDTH, 1);
+    dim3 blockDim(32, 18, 1);
     dim3 gridDim(B, 1, 1);
 
     // allocate constant_kernel
