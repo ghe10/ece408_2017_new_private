@@ -22,10 +22,11 @@ __global__ void forward_kernel(float *y, const float *x, const float *k) {
     int block_num = blockIdx.x;
     int local_h = threadIdx.y;
     int local_w = threadIdx.x;
-    int local_index = (local_h << 5) + local_w;
+    int local_index = (local_h << 6) + local_w;
     int read_base = (block_num << 4)*1225;//
-    int write_base = (block_num << 7) * 5625;
+    int write_base = (block_num << 7) * 5625 + local_index;
     float sum;
+    int x_pos, y_pos;
     // load 28 * 28 input
     for (int index = 0; index < 17; index++) {
       x_shared[(index<<6)*9 + local_index] = x[read_base + (index<<6)*9 + local_index];
@@ -36,18 +37,19 @@ __global__ void forward_kernel(float *y, const float *x, const float *k) {
     __syncthreads();
 
     // compute the convolution result
-      write_base += local_index;
       for (int index = 0; index < 13; index++) {
-        #pragma unroll 15
+        x_pos = (index<<4)*49 + ((local_index/24) << 2) * 7 + local_index%24;
+        y_pos = write_base + (index << 7)*225;
+        #pragma unroll 14
         for (int kernel_index = 0; kernel_index < 50; kernel_index++) {
           sum = 0;
           for (int i = 0; i < 5; i++) {
             for (int j = 0; j < 5; j++) {
-                sum += x_shared[(index<<4)*49 + ((local_index/24 + i) << 2)*7 + local_index%24 + j] *
+                sum += x_shared[x_pos + (i << 2)*7  + j] *
                   kernel[kernel_index * 25 + i * 5 + j];
               }
           }
-          y[write_base + (index << 7)*225 + (kernel_index << 6)*9] = sum;
+          y[y_pos + (kernel_index << 6)*9] = sum;
         }
       }
     __syncthreads();
@@ -63,73 +65,20 @@ __global__ void forward_kernel(float *y, const float *x, const float *k) {
 
     // compute the convolution result
       for (int index = 0; index < 12; index++) {
-        #pragma unroll 15
+        x_pos = (index<<4)*49 + ((local_index/24) << 2) * 7 + local_index%24;
+        y_pos = write_base + (index << 7)*225;
+        #pragma unroll 14
         for (int kernel_index = 0; kernel_index < 50; kernel_index++) {
           sum = 0;
           for (int i = 0; i < 5; i++) {
             for (int j = 0; j < 5; j++) {
-                sum += x_shared[(index<<4)*49 + ((local_index/24 + i)<<2)*7 + local_index%24 + j] *
+                sum += x_shared[x_pos + (i<<2)*7 + j] *
                   kernel[kernel_index * 25 + i * 5 + j];
               }
           }
-          y[write_base + (index<<7)*225 + (kernel_index<<6)*9] = sum;
+          y[y_pos + (kernel_index<<6)*9] = sum;
         }
       }
-    /*
-    __syncthreads();
-    // -----------------  third batch ---------------------
-    read_base += 10976;
-    write_base += 403200;
-    for (int index = 0; index < 12; index++) {
-      x_shared[(index<<4)*49 + local_index] = x[read_base + (index<<4)*49];
-    }
-    __syncthreads();
-
-    // compute the convolution result
-
-    if (local_index < 576) {
-      for (int index = 0; index < 12; index++) {
-        #pragma unroll 16
-        for (int kernel_index = 0; kernel_index < 50; kernel_index++) {
-          sum = 0;
-          for (int i = 0; i < 5; i++) {
-            for (int j = 0; j < 5; j++) {
-                sum += x_shared[(index<<4)*49 + (local_index/24 + i) * 28 + local_index%24 + j] *
-                  kernel[kernel_index * 25 + i * 5 + j];
-              }
-          }
-          y[write_base + (index<<7)*225 + (kernel_index<<6)*9] = sum;
-        }
-      }
-    }
-    
-    __syncthreads();
-    // -----------------  fourth batch -----------------------
-    read_base += 7840;
-    write_base += 288000;
-    for (int index = 0; index < PIC_PER_BLOCK; index++) {
-      x_shared[index * 784 + local_index] = x[read_base + index * 784];
-    }
-    __syncthreads();
-
-    // compute the convolution result
-
-    if (local_index < 576) {
-      for (int index = 0; index < PIC_PER_BLOCK; index++) {
-        #pragma unroll 15
-        for (int kernel_index = 0; kernel_index < 50; kernel_index++) {
-          sum = 0;
-          for (int i = 0; i < 5; i++) {
-            for (int j = 0; j < 5; j++) {
-                sum += x_shared[index*784 + (local_index/24 + i) * 28 + local_index%24 + j] *
-                  kernel[kernel_index * 25 + i * 5 + j];
-              }
-          }
-          y[write_base + index * 28800 + kernel_index * 576] = sum;
-        }
-      }
-    }
-*/
 }
 
 
@@ -142,7 +91,7 @@ void forward<gpu, float>(mshadow::Tensor<gpu, 4, float> &y, const mshadow::Tenso
     const int B = x.shape_[0] / 25; // input batch
 
     //dim3 blockDim(TILE_WIDTH, TILE_WIDTH, 1);
-    dim3 blockDim(32, 18, 1);
+    dim3 blockDim(64, 9, 1);
     dim3 gridDim(B, 1, 1);
 
     // allocate constant_kernel
