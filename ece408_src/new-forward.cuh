@@ -50,7 +50,7 @@ __global__ void forward_kernel(float *y, const float *x, const float *k) {
           y[y_pos + (kernel_index << 6) * 9] = sum;
         }
       }
-    __syncthreads();
+    //__syncthreads();
 
     // ------------------- second batch --------------------------
     read_base += 10192;   //7840;
