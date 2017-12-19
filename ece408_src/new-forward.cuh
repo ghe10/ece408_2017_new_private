@@ -34,7 +34,6 @@ __global__ void forward_kernel(float *y, const float *x, const float *k) {
     __syncthreads();
 
     // compute the convolution result
-      //#pragma unroll 8
       for (int index = 0; index < 13; index++) {
         x_pos = (index<<4)*49 + (((local_index >> 3)/3) << 2) * 7 + local_index%24;
         y_pos = write_base + (index << 7)*225;
@@ -50,12 +49,11 @@ __global__ void forward_kernel(float *y, const float *x, const float *k) {
           y[y_pos + (kernel_index << 6) * 9] = sum;
         }
       }
-    //__syncthreads();
+    __syncthreads();
 
     // ------------------- second batch --------------------------
     read_base += 10192;   //7840;
     write_base += 374400; //288000;
-    //#pragma unroll 8
     for (int index = 0; index < 16; index++) {
       x_shared[(index<<6)*9 + local_index] = x[read_base + (index<<6)*9];
     }
