@@ -4,9 +4,6 @@
 
 #include <mxnet/base.h>
 
-#define TILE_WIDTH 28
-#define PIC_PER_BLOCK 12
-
 namespace mxnet
 {
 namespace op
@@ -20,27 +17,28 @@ __global__ void forward_kernel(float *y, const float *x, const float *k) {
     */
     __shared__ float x_shared[10192];
     int block_num = blockIdx.x;
-    int local_h = threadIdx.y;
-    int local_w = threadIdx.x;
-    int local_index = (local_h << 6) + local_w;
-    int read_base = (block_num << 4)*1225;//
-    int write_base = (block_num << 7) * 5625 + local_index;
-    float sum;
+    //int local_h = threadIdx.y;
+    //int local_w = threadIdx.x;
+    int local_index = (threadIdx.y << 6) + threadIdx.x; //(local_h << 6) + local_w;
+    int read_base = (block_num << 4) * 1225 + local_index;   //784 * 25
+    int write_base = (block_num << 7) * 5625 + local_index;//28800 * 25
     int x_pos, y_pos;
+    float sum;
     // load 28 * 28 input
     for (int index = 0; index < 17; index++) {
-      x_shared[(index<<6)*9 + local_index] = x[read_base + (index<<6)*9 + local_index];
+      x_shared[(index<<6)*9 + local_index] = x[read_base + (index<<6)*9];
     }
     if(local_index < 400){
-        x_shared[9792 + local_index] = x[read_base + 9792 + local_index];
+        x_shared[9792 + local_index] = x[read_base + 9792];
     }
     __syncthreads();
 
     // compute the convolution result
+      //#pragma unroll 8
       for (int index = 0; index < 13; index++) {
-        x_pos = (index<<4)*49 + ((local_index/24) << 2) * 7 + local_index%24;
+        x_pos = (index<<4)*49 + (((local_index >> 3)/3) << 2) * 7 + local_index%24;
         y_pos = write_base + (index << 7)*225;
-        #pragma unroll 14
+        #pragma unroll 15
         for (int kernel_index = 0; kernel_index < 50; kernel_index++) {
           sum = 0;
           for (int i = 0; i < 5; i++) {
@@ -49,25 +47,26 @@ __global__ void forward_kernel(float *y, const float *x, const float *k) {
                   kernel[kernel_index * 25 + i * 5 + j];
               }
           }
-          y[y_pos + (kernel_index << 6)*9] = sum;
+          y[y_pos + (kernel_index << 6) * 9] = sum;
         }
       }
     __syncthreads();
 
     // ------------------- second batch --------------------------
-    read_base += 10192; //7840;
+    read_base += 10192;   //7840;
     write_base += 374400; //288000;
+    //#pragma unroll 8
     for (int index = 0; index < 16; index++) {
-      x_shared[(index<<6)*9 + local_index] = x[read_base + (index<<6)*9 + local_index];
+      x_shared[(index<<6)*9 + local_index] = x[read_base + (index<<6)*9];
     }
-    if(local_index < 192) x_shared[9216 + local_index] = x[read_base + 9216 + local_index];
+    if(local_index < 192) x_shared[9216 + local_index] = x[read_base + 9216];
     __syncthreads();
 
     // compute the convolution result
       for (int index = 0; index < 12; index++) {
-        x_pos = (index<<4)*49 + ((local_index/24) << 2) * 7 + local_index%24;
+        x_pos = (index<<4)*49 + (((local_index>>3)/3) << 2) * 7 + local_index%24;
         y_pos = write_base + (index << 7)*225;
-        #pragma unroll 14
+        #pragma unroll 15
         for (int kernel_index = 0; kernel_index < 50; kernel_index++) {
           sum = 0;
           for (int i = 0; i < 5; i++) {
@@ -76,7 +75,7 @@ __global__ void forward_kernel(float *y, const float *x, const float *k) {
                   kernel[kernel_index * 25 + i * 5 + j];
               }
           }
-          y[y_pos + (kernel_index<<6)*9] = sum;
+          y[y_pos + (kernel_index<<6) * 9] = sum;
         }
       }
 }
@@ -88,11 +87,10 @@ __global__ void forward_kernel(float *y, const float *x, const float *k) {
 // Any code you write should be executed by this function
 template<>
 void forward<gpu, float>(mshadow::Tensor<gpu, 4, float> &y, const mshadow::Tensor<gpu, 4, float> &x, const mshadow::Tensor<gpu, 4, float> &w) {
-    const int B = x.shape_[0] / 25; // input batch
+    //const int B = x.shape_[0] / 25; // input batch
 
-    //dim3 blockDim(TILE_WIDTH, TILE_WIDTH, 1);
     dim3 blockDim(64, 9, 1);
-    dim3 gridDim(B, 1, 1);
+    dim3 gridDim(x.shape_[0] / 25, 1, 1);
 
     // allocate constant_kernel
     cudaMemcpyToSymbol(kernel, w.dptr_, 5000, 0, cudaMemcpyDeviceToDevice);
