@@ -103,7 +103,7 @@ void forward<gpu, float>(mshadow::Tensor<gpu, 4, float> &y, const mshadow::Tenso
     // allocate constant_kernel
     cudaMemcpyToSymbol(kernel, w.dptr_, 5000, 0, cudaMemcpyDeviceToDevice);
     // Call the kernel                                0 is sharemem s is stream
-    forward_kernel<<<gridDim, blockDim>>>(y.dptr_,x.dptr_,w.dptr_, (B<<4)*49, (B<<6)*9);
+    forward_kernel<<<gridDim, blockDim>>>(y.dptr_,x.dptr_,w.dptr_, (B<<4)*49, (B<<6)*9*50);
     // Use MSHADOW_CUDA_CALL to check for CUDA runtime errors.
     MSHADOW_CUDA_CALL(cudaDeviceSynchronize());
 
@@ -113,7 +113,7 @@ template<typename gpu, typename DType>
 void forward(mshadow::Tensor<gpu, 4, DType> &y, const mshadow::Tensor<gpu, 4, DType> &x, const mshadow::Tensor<gpu, 4, DType> &w) {
     assert( 0 && "No forward implementation for other datatypes needed for ECE408");
 }
-    
+
 
 }
 }
