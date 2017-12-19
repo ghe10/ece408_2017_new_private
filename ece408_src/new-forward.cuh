@@ -65,7 +65,7 @@ __global__ void forward_kernel(float *y, const float *x, const float *k, int xBo
         x_shared[(index<<6)*9 + local_index] = x[x_pos];
       }
     }
-    if(local_index < 192 && read_base + 9214 < xBound) x_shared[9216 + local_index] = x[read_base + 9216];
+    if(local_index < 192 && read_base + 9216 < xBound) x_shared[9216 + local_index] = x[read_base + 9216];
     __syncthreads();
 
     // compute the convolution result
